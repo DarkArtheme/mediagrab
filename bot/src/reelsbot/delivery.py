@@ -4,14 +4,20 @@ Telegram limits: 1024 chars for a media caption, 4096 for a text message,
 10 items per media group. A too-long caption is truncated (with an ellipsis)
 on the media itself and the full text follows as separate text message(s).
 In albums only the first item carries the caption.
+
+Media can come from local files (first delivery) or from cached Telegram
+file_ids (repeat delivery) — both flow through the same sender.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from aiogram import Bot
 from aiogram.types import FSInputFile, InputMediaPhoto, InputMediaVideo, Message
 
-from mediagrab import MediaItem, MediaPost
+from mediagrab import MediaKind, MediaPost
+from reelsbot.cache import CachedItem, CachedPost
 
 CAPTION_LIMIT = 1024
 TEXT_LIMIT = 4096
@@ -32,57 +38,101 @@ def split_caption(text: str) -> tuple[str, list[str]]:
     return truncated, chunks
 
 
-def _input_media(item: MediaItem, caption: str | None) -> InputMediaPhoto | InputMediaVideo:
-    file = FSInputFile(item.path)
-    if item.kind == "video":
+@dataclass(slots=True)
+class _Payload:
+    """One media item ready to send: a local file or a Telegram file_id."""
+
+    kind: MediaKind
+    media: FSInputFile | str
+    width: int | None = None
+    height: int | None = None
+    duration: int | None = None
+
+
+def _input_media(payload: _Payload, caption: str | None) -> InputMediaPhoto | InputMediaVideo:
+    if payload.kind == "video":
         return InputMediaVideo(
-            media=file,
+            media=payload.media,
             caption=caption,
             supports_streaming=True,
-            width=item.width,
-            height=item.height,
-            duration=round(item.duration) if item.duration else None,
+            width=payload.width,
+            height=payload.height,
+            duration=payload.duration,
         )
-    return InputMediaPhoto(media=file, caption=caption)
+    return InputMediaPhoto(media=payload.media, caption=caption)
 
 
-async def send_post(bot: Bot, chat_id: int, post: MediaPost) -> list[Message]:
-    """Send ``post`` to ``chat_id``; return every message sent (for caching)."""
-    caption, follow_ups = split_caption(post.caption)
+async def _deliver(
+    bot: Bot, chat_id: int, payloads: list[_Payload], caption_text: str
+) -> list[Message]:
+    caption, follow_ups = split_caption(caption_text)
     sent: list[Message] = []
 
-    if len(post.items) == 1:
-        item = post.items[0]
-        if item.kind == "video":
+    if len(payloads) == 1:
+        payload = payloads[0]
+        if payload.kind == "video":
             sent.append(
                 await bot.send_video(
                     chat_id=chat_id,
-                    video=FSInputFile(item.path),
+                    video=payload.media,
                     caption=caption or None,
                     supports_streaming=True,
-                    width=item.width,
-                    height=item.height,
-                    duration=round(item.duration) if item.duration else None,
+                    width=payload.width,
+                    height=payload.height,
+                    duration=payload.duration,
                 )
             )
         else:
             sent.append(
                 await bot.send_photo(
                     chat_id=chat_id,
-                    photo=FSInputFile(item.path),
+                    photo=payload.media,
                     caption=caption or None,
                 )
             )
     else:
         first = True
-        for start in range(0, len(post.items), ALBUM_LIMIT):
-            chunk = post.items[start : start + ALBUM_LIMIT]
+        for start in range(0, len(payloads), ALBUM_LIMIT):
+            chunk = payloads[start : start + ALBUM_LIMIT]
             media = []
-            for item in chunk:
-                media.append(_input_media(item, (caption or None) if first else None))
+            for payload in chunk:
+                media.append(_input_media(payload, (caption or None) if first else None))
                 first = False
             sent.extend(await bot.send_media_group(chat_id=chat_id, media=media))
 
     for text in follow_ups:
         sent.append(await bot.send_message(chat_id=chat_id, text=text))
     return sent
+
+
+async def send_post(bot: Bot, chat_id: int, post: MediaPost) -> list[Message]:
+    """Send a freshly downloaded ``post``; return every message sent."""
+    payloads = [
+        _Payload(
+            kind=item.kind,
+            media=FSInputFile(item.path),
+            width=item.width,
+            height=item.height,
+            duration=round(item.duration) if item.duration else None,
+        )
+        for item in post.items
+    ]
+    return await _deliver(bot, chat_id, payloads, post.caption)
+
+
+async def send_cached(bot: Bot, chat_id: int, cached: CachedPost) -> list[Message]:
+    """Re-send a post from cached Telegram file_ids — no download involved."""
+    payloads = [_Payload(kind=item.kind, media=item.file_id) for item in cached.items]
+    return await _deliver(bot, chat_id, payloads, cached.caption)
+
+
+def extract_file_ids(messages: list[Message]) -> list[CachedItem]:
+    """Pull cacheable file_ids out of sent messages (text follow-ups skipped)."""
+    items: list[CachedItem] = []
+    for message in messages:
+        if message.video is not None:
+            items.append(CachedItem(kind="video", file_id=message.video.file_id))
+        elif message.photo:
+            # photo is a list of sizes; the last one is the original resolution
+            items.append(CachedItem(kind="photo", file_id=message.photo[-1].file_id))
+    return items

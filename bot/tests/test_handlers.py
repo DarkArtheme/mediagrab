@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from aiogram.exceptions import TelegramBadRequest
 
 from mediagrab import MediaItem, MediaPost
 from mediagrab import Router as MediaRouter
@@ -16,7 +17,9 @@ from mediagrab.errors import (
     UnsupportedUrl,
 )
 from reelsbot import handlers
+from reelsbot.cache import CachedItem, CachedPost, CacheRepository
 from reelsbot.config import Config
+from reelsbot.throttle import ExtractionGate
 
 CONFIG = Config(
     bot_token="123:abc",
@@ -29,6 +32,17 @@ CONFIG = Config(
 )
 
 REEL_URL = "https://www.instagram.com/reel/DZu6cdBI2-A/"
+REEL_UID = "DZu6cdBI2-A"
+
+
+@pytest.fixture
+def cache(tmp_path: Path) -> CacheRepository:
+    return CacheRepository(tmp_path / "cache.sqlite3")
+
+
+@pytest.fixture
+def gate() -> ExtractionGate:
+    return ExtractionGate(min_interval=0.0)
 
 
 class FakeProvider:
@@ -112,15 +126,24 @@ class TestWhitelisted:
         assert await handlers.Whitelisted()(message, CONFIG) is False
 
 
+SENT_VIDEO = SimpleNamespace(video=SimpleNamespace(file_id="vid-1"), photo=None)
+
+
 class TestHandleLink:
-    async def test_happy_path(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_happy_path(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        cache: CacheRepository,
+        gate: ExtractionGate,
+    ) -> None:
         post = make_post(tmp_path)
         provider = FakeProvider(post=post)
-        send_post = AsyncMock()
+        send_post = AsyncMock(return_value=[SENT_VIDEO])
         monkeypatch.setattr(handlers.delivery, "send_post", send_post)
         message, bot = make_message(), AsyncMock()
 
-        await handlers.handle_link(message, bot, CONFIG, make_router(provider))
+        await handlers.handle_link(message, bot, CONFIG, make_router(provider), cache, gate)
 
         assert provider.calls == [REEL_URL]
         send_post.assert_awaited_once_with(bot, 555, post)
@@ -128,37 +151,115 @@ class TestHandleLink:
         status.delete.assert_awaited_once()
         status.edit_text.assert_not_awaited()
         assert not post.items[0].path.parent.exists()  # temp dir cleaned up
+        # file_ids of the sent messages were stored for next time
+        stored = cache.get(REEL_UID)
+        assert stored is not None
+        assert stored.items == [CachedItem(kind="video", file_id="vid-1")]
+        assert stored.caption == "cap"
+        # user slot released: the next job is accepted
+        assert gate.acquire_user(111) is True
 
-    async def test_no_url_in_text(self) -> None:
+    async def test_cache_hit_skips_provider(
+        self, monkeypatch: pytest.MonkeyPatch, cache: CacheRepository, gate: ExtractionGate
+    ) -> None:
+        cached = CachedPost(
+            uid=REEL_UID,
+            provider="instagram",
+            kind="reel",
+            items=[CachedItem(kind="video", file_id="vid-1")],
+            caption="cap",
+        )
+        cache.put(cached)
+        send_cached = AsyncMock()
+        monkeypatch.setattr(handlers.delivery, "send_cached", send_cached)
+        provider = FakeProvider()
+        message, bot = make_message(), AsyncMock()
+
+        await handlers.handle_link(message, bot, CONFIG, make_router(provider), cache, gate)
+
+        send_cached.assert_awaited_once_with(bot, 555, cached)
+        assert provider.calls == []  # Instagram untouched
+        message.answer.assert_not_awaited()  # no status message either
+
+    async def test_stale_cache_falls_back_to_extraction(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        cache: CacheRepository,
+        gate: ExtractionGate,
+    ) -> None:
+        cache.put(
+            CachedPost(
+                uid=REEL_UID,
+                provider="instagram",
+                kind="reel",
+                items=[CachedItem(kind="video", file_id="dead-id")],
+                caption="cap",
+            )
+        )
+        error = TelegramBadRequest(method=None, message="wrong file identifier")  # type: ignore[arg-type]
+        monkeypatch.setattr(handlers.delivery, "send_cached", AsyncMock(side_effect=error))
+        send_post = AsyncMock(return_value=[SENT_VIDEO])
+        monkeypatch.setattr(handlers.delivery, "send_post", send_post)
+        provider = FakeProvider(post=make_post(tmp_path))
+        message, bot = make_message(), AsyncMock()
+
+        await handlers.handle_link(message, bot, CONFIG, make_router(provider), cache, gate)
+
+        assert provider.calls == [REEL_URL]  # re-extracted
+        stored = cache.get(REEL_UID)
+        assert stored is not None
+        assert stored.items == [CachedItem(kind="video", file_id="vid-1")]  # entry replaced
+
+    async def test_busy_user_refused(self, cache: CacheRepository, gate: ExtractionGate) -> None:
+        gate.acquire_user(111)
+        provider = FakeProvider()
+        message, bot = make_message(), AsyncMock()
+        await handlers.handle_link(message, bot, CONFIG, make_router(provider), cache, gate)
+        assert provider.calls == []
+        message.answer.assert_awaited_once()
+        assert "previous link" in message.answer.await_args.args[0]
+
+    async def test_no_url_in_text(self, cache: CacheRepository, gate: ExtractionGate) -> None:
         message, bot = make_message(text="just words"), AsyncMock()
-        await handlers.handle_link(message, bot, CONFIG, make_router(FakeProvider()))
+        await handlers.handle_link(message, bot, CONFIG, make_router(FakeProvider()), cache, gate)
         message.answer.assert_awaited_once()
         assert "link" in message.answer.await_args.args[0]
 
-    async def test_unsupported_url_no_status_message(self) -> None:
+    async def test_unsupported_url_no_status_message(
+        self, cache: CacheRepository, gate: ExtractionGate
+    ) -> None:
         message, bot = make_message(text="https://example.com/watch/123"), AsyncMock()
-        await handlers.handle_link(message, bot, CONFIG, make_router(FakeProvider()))
+        await handlers.handle_link(message, bot, CONFIG, make_router(FakeProvider()), cache, gate)
         message.answer.assert_awaited_once()  # only the refusal, no "downloading" status
         assert message.answer.await_args.args[0] == handlers.friendly_error(UnsupportedUrl("x"))
 
-    async def test_error_edits_status(self) -> None:
+    async def test_error_edits_status(self, cache: CacheRepository, gate: ExtractionGate) -> None:
         provider = FakeProvider(error=RateLimited("429"))
         message, bot = make_message(), AsyncMock()
-        await handlers.handle_link(message, bot, CONFIG, make_router(provider))
+        await handlers.handle_link(message, bot, CONFIG, make_router(provider), cache, gate)
         status = message.answer.return_value
         status.edit_text.assert_awaited_once_with(handlers.friendly_error(RateLimited("429")))
         status.delete.assert_not_awaited()
         bot.send_message.assert_not_awaited()  # no admin ping for rate limits
+        assert cache.get(REEL_UID) is None  # failures are not cached
+        assert gate.acquire_user(111) is True  # user slot released on failure
 
-    async def test_auth_expired_notifies_admin(self) -> None:
+    async def test_auth_expired_notifies_admin(
+        self, cache: CacheRepository, gate: ExtractionGate
+    ) -> None:
         provider = FakeProvider(error=AuthExpired("cookies"))
         message, bot = make_message(), AsyncMock()
-        await handlers.handle_link(message, bot, CONFIG, make_router(provider))
+        await handlers.handle_link(message, bot, CONFIG, make_router(provider), cache, gate)
         bot.send_message.assert_awaited_once()
         assert bot.send_message.await_args.kwargs["chat_id"] == 999
 
     async def test_delivery_failure_cleans_up_and_reraises(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        cache: CacheRepository,
+        gate: ExtractionGate,
     ) -> None:
         post = make_post(tmp_path)
         provider = FakeProvider(post=post)
@@ -167,7 +268,9 @@ class TestHandleLink:
         )
         message, bot = make_message(), AsyncMock()
         with pytest.raises(RuntimeError):
-            await handlers.handle_link(message, bot, CONFIG, make_router(provider))
+            await handlers.handle_link(message, bot, CONFIG, make_router(provider), cache, gate)
         status = message.answer.return_value
         status.edit_text.assert_awaited_once_with(handlers._FALLBACK_REPLY)
         assert not post.items[0].path.parent.exists()
+        assert cache.get(REEL_UID) is None
+        assert gate.acquire_user(111) is True

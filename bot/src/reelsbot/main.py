@@ -13,7 +13,9 @@ from dotenv import load_dotenv
 from mediagrab import InstagramProvider
 from mediagrab import Router as MediaRouter
 from reelsbot import handlers
+from reelsbot.cache import CacheRepository
 from reelsbot.config import Config
+from reelsbot.throttle import ExtractionGate
 
 log = logging.getLogger(__name__)
 
@@ -45,6 +47,8 @@ async def run(config: Config) -> None:
         bot,
         config=config,
         media_router=build_media_router(config),
+        cache=CacheRepository(config.db_path),
+        gate=ExtractionGate(),
     )
 
 

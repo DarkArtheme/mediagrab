@@ -1,12 +1,22 @@
-"""delivery: caption splitting and send_post call shapes (Bot is mocked)."""
+"""delivery: caption splitting and send call shapes (Bot is mocked)."""
 
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from aiogram.types import InputMediaPhoto, InputMediaVideo
 
 from mediagrab import MediaItem, MediaPost
-from reelsbot.delivery import ALBUM_LIMIT, CAPTION_LIMIT, TEXT_LIMIT, send_post, split_caption
+from reelsbot.cache import CachedItem, CachedPost
+from reelsbot.delivery import (
+    ALBUM_LIMIT,
+    CAPTION_LIMIT,
+    TEXT_LIMIT,
+    extract_file_ids,
+    send_cached,
+    send_post,
+    split_caption,
+)
 
 
 def _post(items: list[MediaItem], caption: str = "hi") -> MediaPost:
@@ -116,3 +126,48 @@ class TestSendPost:
         text = "z" * (CAPTION_LIMIT + 1)
         sent = await send_post(bot, 42, _post([_photo("1.jpg"), _photo("2.jpg")], caption=text))
         assert sent == ["m1", "m2", "m3"]
+
+
+def _cached(items: list[CachedItem], caption: str = "hi") -> CachedPost:
+    return CachedPost(uid="ABC", provider="instagram", kind="post", items=items, caption=caption)
+
+
+class TestSendCached:
+    async def test_single_video_by_file_id(self) -> None:
+        bot = AsyncMock()
+        await send_cached(bot, 42, _cached([CachedItem(kind="video", file_id="vid-1")]))
+        kwargs = bot.send_video.await_args.kwargs
+        assert kwargs["video"] == "vid-1"
+        assert kwargs["caption"] == "hi"
+        assert kwargs["supports_streaming"] is True
+
+    async def test_single_photo_by_file_id(self) -> None:
+        bot = AsyncMock()
+        await send_cached(bot, 42, _cached([CachedItem(kind="photo", file_id="ph-1")]))
+        assert bot.send_photo.await_args.kwargs["photo"] == "ph-1"
+
+    async def test_album_from_file_ids(self) -> None:
+        bot = AsyncMock()
+        items = [CachedItem(kind="photo", file_id="p1"), CachedItem(kind="video", file_id="v1")]
+        await send_cached(bot, 42, _cached(items, caption="album"))
+        media = bot.send_media_group.await_args.kwargs["media"]
+        assert [type(m) for m in media] == [InputMediaPhoto, InputMediaVideo]
+        assert media[0].media == "p1"
+        assert media[0].caption == "album"
+        assert media[1].caption is None
+
+
+class TestExtractFileIds:
+    def test_picks_video_and_largest_photo_skips_text(self) -> None:
+        messages = [
+            SimpleNamespace(video=SimpleNamespace(file_id="vid-1"), photo=None),
+            SimpleNamespace(
+                video=None,
+                photo=[SimpleNamespace(file_id="small"), SimpleNamespace(file_id="big")],
+            ),
+            SimpleNamespace(video=None, photo=None),  # follow-up text message
+        ]
+        assert extract_file_ids(messages) == [  # type: ignore[arg-type]
+            CachedItem(kind="video", file_id="vid-1"),
+            CachedItem(kind="photo", file_id="big"),
+        ]

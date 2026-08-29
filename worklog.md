@@ -195,3 +195,43 @@ All project actions are recorded here, newest entry last.
   bot MVP, tests, CI, docs).
 - Per user instruction, added a rule to CLAUDE.md: commit to `master` after any file
   changes (secrets stay git-ignored, never committed).
+
+## 2026-08-29 — Phase 4: Cache + politeness
+
+- `cache.py`: `CacheRepository(db_path)` over sqlite3 (WAL pragma on connect; parent dir
+  auto-created), table `posts(uid PK, provider, kind, file_ids JSON, caption,
+  created_at)`. `get(uid) -> CachedPost | None`, `put` (upsert via ON CONFLICT),
+  `delete`, `close`. `CachedItem(kind, file_id)` / `CachedPost` dataclasses.
+  **Decision:** sync sqlite3 calls straight from the async handler — ops are
+  sub-millisecond at this scale; revisit only if Postgres lands.
+- `throttle.py` (new module): `ExtractionGate` — global `asyncio.Semaphore`
+  (default 2 concurrent extractions), a minimum interval between extraction *starts*
+  (default 3 s, enforced under a lock with monotonic time), and a per-user busy set
+  (`acquire_user`/`release_user`) so each user has at most one in-flight job.
+  Defaults are module constants, not env — move to config if tuning is ever needed.
+- `delivery.py` refactor: internal `_Payload` (kind + FSInputFile-or-file_id string +
+  video dims) and one `_deliver()` used by both `send_post` (fresh files) and new
+  `send_cached` (Telegram file_ids, no download). New `extract_file_ids(messages)`
+  harvests `video.file_id` / largest `photo` size from sent messages, skipping text
+  follow-ups. Same caption rules on both paths.
+- `handlers.py`: link handler now takes `cache` + `gate` via dispatcher DI. Flow:
+  route → cache lookup (hit ⇒ `send_cached`, instant, no status message) → per-user
+  gate (busy ⇒ "still working on your previous link") → status message → extraction
+  under `gate.slot()` → send → `cache.put` with extracted file_ids → release user in
+  `finally`. **Decision:** a `TelegramBadRequest` on a cached send (stale file_id,
+  e.g. after a future Bot API server switch) deletes the entry and falls through to a
+  fresh extraction instead of failing the user.
+- `main.py`: constructs `CacheRepository(config.db_path)` and `ExtractionGate()` and
+  injects them as polling workflow data.
+- Tests (+21, total 141 passed / 2 skipped): cache (roundtrip incl. emoji caption,
+  order-preserving multi-item JSON, upsert, delete, persistence across connections,
+  WAL mode), throttle (busy/release/independent users, min-interval spacing,
+  concurrency peak of 1 under a 1-slot gate, zero-interval fast path), delivery
+  (send_cached by file_id for video/photo/album, extract_file_ids), handlers (happy
+  path now also asserts cache stored + user slot released; cache hit answers without
+  touching the provider or posting a status; stale-cache fallback re-extracts and
+  replaces the entry; busy user refused; failures cache nothing and release the user).
+  README status → phases 0–4. Ruff check/format clean.
+- Done-criterion "re-sending a link replies instantly without touching Instagram" —
+  unit-verified (cache-hit path never calls the provider); live confirmation shares
+  the pending Phase 3 end-to-end run.

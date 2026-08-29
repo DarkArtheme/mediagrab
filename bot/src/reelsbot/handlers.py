@@ -7,6 +7,7 @@ import re
 import shutil
 
 from aiogram import Bot, F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, Filter
 from aiogram.types import Message
 
@@ -20,7 +21,9 @@ from mediagrab.errors import (
     UnsupportedUrl,
 )
 from reelsbot import delivery
+from reelsbot.cache import CachedPost, CacheRepository
 from reelsbot.config import Config
+from reelsbot.throttle import ExtractionGate
 
 log = logging.getLogger(__name__)
 
@@ -69,7 +72,12 @@ async def cmd_help(message: Message) -> None:
 
 @router.message(Whitelisted(), F.text)
 async def handle_link(
-    message: Message, bot: Bot, config: Config, media_router: MediaRouter
+    message: Message,
+    bot: Bot,
+    config: Config,
+    media_router: MediaRouter,
+    cache: CacheRepository,
+    gate: ExtractionGate,
 ) -> None:
     url = first_url(message.text or "")
     if url is None:
@@ -82,11 +90,37 @@ async def handle_link(
         await message.answer(friendly_error(err))
         return
 
+    cached = cache.get(route.uid)
+    if cached is not None:
+        try:
+            await delivery.send_cached(bot, message.chat.id, cached)
+            return
+        except TelegramBadRequest:
+            # file_ids can go stale (e.g. after a Bot API server switch);
+            # drop the entry and fall through to a fresh extraction.
+            log.warning("stale cache entry for %s; re-extracting", route.uid)
+            cache.delete(route.uid)
+
+    assert message.from_user is not None  # guaranteed by Whitelisted
+    if not gate.acquire_user(message.from_user.id):
+        await message.answer("Hold on — I'm still working on your previous link.")
+        return
+
     status = await message.answer("⏳ Downloading…")
     post: MediaPost | None = None
     try:
-        post = await provider.resolve(route.canonical_url)
-        await delivery.send_post(bot, message.chat.id, post)
+        async with gate.slot():
+            post = await provider.resolve(route.canonical_url)
+        sent = await delivery.send_post(bot, message.chat.id, post)
+        cache.put(
+            CachedPost(
+                uid=route.uid,
+                provider=route.provider,
+                kind=route.kind,
+                items=delivery.extract_file_ids(sent),
+                caption=post.caption,
+            )
+        )
     except MediaGrabError as err:
         log.warning("resolve failed for %s: %r", route.canonical_url, err)
         await status.edit_text(friendly_error(err))
@@ -99,6 +133,7 @@ async def handle_link(
     else:
         await status.delete()
     finally:
+        gate.release_user(message.from_user.id)
         _cleanup(post)
 
 

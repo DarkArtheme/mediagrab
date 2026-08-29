@@ -65,5 +65,6 @@ MEDIAGRAB_LIVE_TEST=1 IG_COOKIES_FILE=~/ig-cookies.txt \
 
 ## Status
 
-Phases 0–3 done (scaffolding, library core, Instagram provider, bot MVP). See `plan.md`
-for the implementation roadmap and `worklog.md` for the project history.
+Phases 0–4 done (scaffolding, library core, Instagram provider, bot MVP, cache +
+politeness). See `plan.md` for the implementation roadmap and `worklog.md` for the
+project history.
