@@ -1,0 +1,30 @@
+[tool.uv.workspace]
+members = ["packages/mediagrab", "bot"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=1.0",
+    "ruff>=0.12",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["packages/mediagrab/src", "bot/src"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "SIM", # flake8-simplify
+]
+
+[tool.pytest.ini_options]
+testpaths = ["packages/mediagrab/tests", "bot/tests"]
+addopts = "-q --import-mode=importlib"
+asyncio_mode = "auto"

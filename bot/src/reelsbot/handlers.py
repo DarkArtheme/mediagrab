@@ -1,0 +1,132 @@
+"""Message handlers: whitelist filter, /start, /help, and the link handler."""
+
+from __future__ import annotations
+
+import logging
+import re
+import shutil
+
+from aiogram import Bot, F, Router
+from aiogram.filters import Command, Filter
+from aiogram.types import Message
+
+from mediagrab import MediaPost
+from mediagrab import Router as MediaRouter
+from mediagrab.errors import (
+    AuthExpired,
+    MediaGrabError,
+    PostUnavailable,
+    RateLimited,
+    UnsupportedUrl,
+)
+from reelsbot import delivery
+from reelsbot.config import Config
+
+log = logging.getLogger(__name__)
+
+router = Router(name="reelsbot")
+
+_URL_RE = re.compile(r"(?:https?://)?(?:[\w-]+\.)+[a-z]{2,}/\S+", re.IGNORECASE)
+
+_ERROR_REPLIES = {
+    UnsupportedUrl: "I don't recognize that link. Send me an Instagram reel or post URL.",
+    PostUnavailable: "That post can't be fetched — it may be private, deleted, or blocked.",
+    AuthExpired: "Instagram session expired; the admin has been notified. Please try again later.",
+    RateLimited: "Instagram is rate-limiting right now. Please try again in a few minutes.",
+}
+_FALLBACK_REPLY = "Something went wrong while fetching that link. Please try again later."
+
+
+def friendly_error(err: MediaGrabError) -> str:
+    """Map a mediagrab error onto a human reply."""
+    for err_type, reply in _ERROR_REPLIES.items():
+        if isinstance(err, err_type):
+            return reply
+    return _FALLBACK_REPLY
+
+
+def first_url(text: str) -> str | None:
+    """Return the first URL-looking token in ``text``, or None."""
+    match = _URL_RE.search(text)
+    return match.group(0) if match else None
+
+
+class Whitelisted(Filter):
+    """Pass only messages from whitelisted user ids."""
+
+    async def __call__(self, message: Message, config: Config) -> bool:
+        return message.from_user is not None and message.from_user.id in config.whitelist
+
+
+@router.message(Command("start", "help"), Whitelisted())
+async def cmd_help(message: Message) -> None:
+    await message.answer(
+        "Send me an Instagram link and I'll reply with the media and its description.\n\n"
+        "Supported: reels (https://www.instagram.com/reel/…) and posts "
+        "(https://www.instagram.com/p/…), including photo and mixed carousels."
+    )
+
+
+@router.message(Whitelisted(), F.text)
+async def handle_link(
+    message: Message, bot: Bot, config: Config, media_router: MediaRouter
+) -> None:
+    url = first_url(message.text or "")
+    if url is None:
+        await message.answer("Send me an Instagram link (reel or post) and I'll fetch it.")
+        return
+
+    try:
+        provider, route = media_router.resolve(url)
+    except UnsupportedUrl as err:
+        await message.answer(friendly_error(err))
+        return
+
+    status = await message.answer("⏳ Downloading…")
+    post: MediaPost | None = None
+    try:
+        post = await provider.resolve(route.canonical_url)
+        await delivery.send_post(bot, message.chat.id, post)
+    except MediaGrabError as err:
+        log.warning("resolve failed for %s: %r", route.canonical_url, err)
+        await status.edit_text(friendly_error(err))
+        if isinstance(err, AuthExpired):
+            await _notify_admin(bot, config, route.canonical_url)
+    except Exception:
+        log.exception("unexpected failure for %s", route.canonical_url)
+        await status.edit_text(_FALLBACK_REPLY)
+        raise
+    else:
+        await status.delete()
+    finally:
+        _cleanup(post)
+
+
+@router.message(Whitelisted())
+async def non_text(message: Message) -> None:
+    """Whitelisted, but not a text message."""
+    await message.answer("Send me an Instagram link (reel or post) and I'll fetch it.")
+
+
+@router.message()
+async def refuse(message: Message) -> None:
+    """Anything that got here was not whitelisted."""
+    await message.answer("Sorry, this is a private bot — you're not on the access list.")
+
+
+async def _notify_admin(bot: Bot, config: Config, url: str) -> None:
+    try:
+        await bot.send_message(
+            chat_id=config.admin_user_id,
+            text=f"⚠️ Instagram cookies look expired (AuthExpired while fetching {url}). "
+            "Refresh IG_COOKIES_FILE.",
+        )
+    except Exception:
+        log.exception("failed to notify admin about AuthExpired")
+
+
+def _cleanup(post: MediaPost | None) -> None:
+    """Delete the temp directory the provider downloaded ``post`` into."""
+    if post is None or not post.items:
+        return
+    shutil.rmtree(post.items[0].path.parent, ignore_errors=True)

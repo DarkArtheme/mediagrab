@@ -1,0 +1,17 @@
+[project]
+name = "reelsbot"
+version = "0.1.0"
+description = "Telegram bot that replies to a pasted social-media link with the media and caption."
+requires-python = ">=3.12"
+dependencies = [
+    "mediagrab",
+    "aiogram>=3.13",
+    "python-dotenv>=1.0",
+]
+
+[tool.uv.sources]
+mediagrab = { workspace = true }
+
+[build-system]
+requires = ["uv_build>=0.12.0,<0.13.0"]
+build-backend = "uv_build"

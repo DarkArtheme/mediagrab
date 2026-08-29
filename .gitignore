@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+build/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Secrets & local data
+.env
+cookies.txt
+*.cookies
+*.sqlite3
+*.sqlite3-*
+
+# OS
+.DS_Store

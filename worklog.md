@@ -1,0 +1,195 @@
+# Worklog
+
+All project actions are recorded here, newest entry last.
+
+## 2026-08-28 — Planning session
+
+- Researched (3 parallel subagents) the 2026 state of: Instagram downloading tools
+  (anonymous scraping dead; yt-dlp/gallery-dl need logged-in cookies; paid APIs as reliable
+  alternative), Telegram bot stack (aiogram 3 + long polling; 50 MB limit → 2 GB via
+  self-hosted Local Bot API Server; 1024-char media captions), and TikTok tools for the
+  future provider (yt-dlp works anonymously for videos; photo slideshows flaky).
+- Agreed decisions with the user: Python + uv monorepo (`packages/mediagrab` library +
+  `bot/`), MVP for ~10 whitelisted users on a VPS with Docker, burner-account cookies for
+  Instagram with a paid-API/proxy fallback designed for later, Local Bot API Server
+  container, caption on media with >1024 overflow as a follow-up message, SQLite (WAL)
+  file_id cache behind a repository class, photo/mixed carousels as albums, "⏳ downloading…"
+  progress message, solid-but-lean engineering (ruff, pytest, typed, GitHub Actions CI).
+- Created `CLAUDE.md` (working instructions, core provider contract, locked decisions,
+  conventions) and `plan.md` (architecture, phases 0–6 with done-criteria, future work,
+  risks).
+- Per user instruction: persistent memory is not used in this project; this worklog is the
+  record of actions instead. Removed the memory files created earlier in the session.
+
+## 2026-08-28 — Phase 0: Scaffolding
+
+- Created the uv workspace: root `pyproject.toml` with `[tool.uv.workspace]`
+  (members: `packages/mediagrab`, `bot`), shared dev dependency group (pytest, ruff),
+  ruff config (line-length 100, py312, rules E/W/F/I/UP/B/SIM), and pytest config.
+  Pytest uses `--import-mode=importlib` because both packages have a `tests/test_imports.py`
+  and the default import mode can't handle duplicate basenames.
+- `packages/mediagrab`: pyproject (uv_build backend, src layout), package README, and
+  empty-but-importable modules per the planned architecture: `models.py`, `errors.py`,
+  `router.py`, `providers/base.py`, `providers/instagram/{provider,ytdlp,gallerydl}.py`.
+- `bot/`: pyproject (`reelsbot`, depends on `mediagrab` via `{ workspace = true }`) and
+  stub modules `main.py`, `__main__.py`, `config.py`, `handlers.py`, `delivery.py`,
+  `cache.py`. `main()` raises NotImplementedError until Phase 3.
+- Smoke tests: parametrized import tests for every module in both packages (16 tests).
+- Repo files: `.github/workflows/ci.yml` (setup-uv, `uv sync --all-packages`, ruff check,
+  ruff format --check, pytest), `.env.example` (BOT_TOKEN, TELEGRAM_API_ID/HASH,
+  TELEGRAM_API_URL, WHITELIST_USER_IDS, ADMIN_USER_ID, IG_COOKIES_FILE, DB_PATH),
+  root `README.md` stub, `.gitignore`, `.python-version` (3.12).
+- Initialized the git repository (`git init -b main`); nothing committed yet, no remote.
+- Verified locally: `uv sync --all-packages`, `uv run pytest` (16 passed),
+  `uv run ruff check .`, `uv run ruff format --check .` all pass. CI itself will run once
+  the repo is pushed to GitHub.
+
+## 2026-08-28 — Phase 1: Library core
+
+- `models.py`: `MediaItem` (kind: "video"|"photo", path, optional width/height/duration)
+  and `MediaPost` (items, caption, author, source_url, uid) as slotted dataclasses.
+- `errors.py`: `MediaGrabError` base + `UnsupportedUrl`, `PostUnavailable`, `AuthExpired`,
+  `RateLimited`, `ExtractionFailed`.
+- `providers/base.py`: runtime-checkable `Provider` protocol. **Decision:** `resolve` is
+  `async` — the bot is aiogram/asyncio, Phase 4 plans an asyncio semaphore around
+  extractions, and Phase 2 will use `asyncio.subprocess`.
+- `router.py`: `parse_url(url) -> Route` where `Route = (provider, uid, kind, canonical_url)`;
+  `kind` is "reel" (also covers `/reels/` and `/tv/`) or "post" (`/p/`), which is what
+  provider.py will dispatch on in Phase 2. Accepts instagram.com / www / m hosts, http(s),
+  scheme-less pastes, username-prefixed share paths (`/<user>/p/<code>/`), and strips all
+  query junk/fragments; canonical URL is `https://www.instagram.com/<seg>/<code>/` with
+  `reels`→`reel` normalized. `/share/<...>/` redirect-token links are explicitly rejected
+  (their last segment is not a shortcode). Everything else raises `UnsupportedUrl`.
+  Also a `Router` class: `register(name, provider)` + `resolve(url) -> (Provider, Route)`;
+  a parseable URL with no registered provider raises `UnsupportedUrl` too.
+- `mediagrab/__init__.py` re-exports the public API (models, Provider, Route, Router,
+  parse_url).
+- Tests: 43 new (models construction, error hierarchy, 17 valid URL shapes, 17 unsupported
+  shapes, Router registration paths). **Note:** the brief's two example links were never
+  recorded in the repo, so tests use realistic stand-in links (`EXAMPLE_REEL`/`EXAMPLE_POST`
+  in `test_router.py`, share-style URLs with `igsh` params); swap in the real ones when
+  available.
+- Done criteria verified: 59 tests pass, ruff check/format clean.
+
+## 2026-08-28 — Phase 2: Instagram provider
+
+- User supplied the brief's real example links; test_router.py now asserts on them:
+  reel `DZu6cdBI2-A`, post `DWTPjRXE5WS` (expected uids/canonicals updated to match).
+- `mediagrab/_proc.py` (new, shared by future providers): async `run_tool(cmd, timeout)`
+  via `asyncio.create_subprocess_exec`; missing binary and timeout both surface as
+  `ExtractionFailed`, never raw OS errors.
+- `providers/instagram/_classify.py` (new): `classify_failure(tool, stderr)` maps stderr
+  onto the taxonomy. **Decision:** auth patterns are checked before rate-limit ones —
+  yt-dlp's dead-cookies message ("rate-limit reached or login required") mentions both,
+  and with cookies configured the actionable cause is almost always expired cookies
+  (admin gets notified to refresh). Pure 429/"too many requests" → `RateLimited`;
+  404/private/does-not-exist → `PostUnavailable`; anything else → `ExtractionFailed`
+  with the tool name + last 3 stderr lines in the message.
+- `ytdlp.py`: one subprocess call (`--dump-json --no-simulate`) downloads and prints
+  metadata; output template `<dest>/%(id)s.%(ext)s`, file located by id-glob;
+  description→caption, uploader→author, width/height/duration mapped.
+- `gallerydl.py`: `--write-metadata --directory <dest>`; items read back from sidecar
+  `<file>.json` files and ordered by the `num` field; empty result list = cue for the
+  yt-dlp fallback.
+- `provider.py`: `InstagramProvider(cookies_file, download_dir, timeout=600)`; each
+  resolve gets a fresh `mkdtemp` under `download_dir` (cleanup is the caller's job —
+  the bot deletes after sending). reel → yt-dlp; post → gallery-dl; falls back to
+  yt-dlp when gallery-dl finds nothing or raises `ExtractionFailed` (plain-video `/p/`
+  posts). AuthExpired/RateLimited/PostUnavailable propagate without fallback.
+  Video kind for gallery items inferred from file extension; `video_duration` from
+  sidecar metadata.
+- Deps: mediagrab now depends on `yt-dlp` + `gallery-dl` (pip packages ship the CLIs
+  into the venv); dev adds `pytest-asyncio` (`asyncio_mode = "auto"`).
+- Tests (+27): provider tests fake `_proc.run_tool` and write files like the real tools
+  (reel success incl. cookie flag threading, carousel ordering by `num` with shuffled
+  filenames, mixed photo+video carousel, video-post fallback call order, expired
+  cookies → `AuthExpired`, 429 → `RateLimited`, private → `PostUnavailable`, garbage
+  JSON / unknown stderr → `ExtractionFailed`, non-IG URL rejected before any
+  subprocess); classifier unit tests; real `run_tool` missing-binary + timeout tests.
+  Fixtures: `ytdlp_reel.json`, `gallerydl_sidecar.json` (emoji/non-ASCII captions covered).
+  `test_live_smoke.py` hits real Instagram only with `MEDIAGRAB_LIVE_TEST=1`.
+- README: burner-account cookie export how-to (Netscape format, `IG_COOKIES_FILE`),
+  refresh-on-AuthExpired routine, live smoke test instructions.
+- Verified: 84 passed, 2 skipped (live smoke), ruff clean. End-to-end wiring
+  sanity-checked with a real yt-dlp run (no cookies): subprocess + error classification
+  worked; the connection to instagram.com timed out from this machine/sandbox, so the
+  **manual check against the example URLs is still pending** — needs the burner
+  cookies file and a network where Instagram is reachable (e.g. the VPS).
+- Live retry (network reachable this time): **example reel resolved end-to-end without
+  cookies** — 27 MB 1080x1920 mp4, real caption + author mapped correctly (yt-dlp gave
+  no `duration` for this reel → field is None; fine for sendVideo). **Example photo
+  post failed anonymously as expected**: gallery-dl was redirected to the login
+  endpoint which returned 429; classified as `RateLimited` with stderr tail preserved.
+  Remaining manual check: run the live smoke test with the burner `IG_COOKIES_FILE`
+  to confirm the photo/carousel path.
+- User provided the burner account's cookies (JSON extension export); converted to
+  Netscape format at repo root `cookies.txt` (gitignored, chmod 600 — verified with
+  `git check-ignore`). Live smoke test with `IG_COOKIES_FILE=cookies.txt`: **both
+  example URLs pass** (reel video + photo post download with metadata). Note: the
+  extractors rewrite the cookie jar after a run (rotated csrftoken/rur) — expected.
+  **Phase 2 done-criteria fully met.**
+
+## 2026-08-28 — Phase 3: Bot MVP
+
+- Deps: `reelsbot` now depends on `aiogram>=3.13` and `python-dotenv>=1.0` (`.env` loaded
+  in `main()`; env still wins in Docker where no `.env` exists).
+- `config.py`: frozen `Config` dataclass + `Config.from_env()` (raises `ConfigError` on
+  missing/malformed values). Required: `BOT_TOKEN`, non-empty `WHITELIST_USER_IDS`,
+  `ADMIN_USER_ID`. Optional: `TELEGRAM_API_URL` (empty → standard api.telegram.org),
+  `IG_COOKIES_FILE`, `DB_PATH` (default `cache.sqlite3`, used in Phase 4), and new
+  `DOWNLOAD_DIR` (added to `.env.example`; empty → system temp dir).
+- `delivery.py`: `split_caption()` (≤1024 unchanged; longer → 1023 chars + "…" on media,
+  full text as follow-up messages chunked at 4096) and `send_post()` — single video via
+  `send_video(supports_streaming=True, width/height/duration)`, single photo via
+  `send_photo`, multi-item posts as `send_media_group` albums chunked at 10 with the
+  caption only on the very first item; returns all sent `Message`s so Phase 4 can harvest
+  file_ids. Float durations rounded to int for the Bot API.
+- `handlers.py`: aiogram `Router` with a `Whitelisted` filter (reads `Config` via
+  dispatcher DI); `/start`+`/help`; link handler (regex-extracts first URL incl.
+  scheme-less pastes → `media_router.resolve` → "⏳ Downloading…" status → provider →
+  `send_post` → status deleted); errors edit the status message in place via
+  `friendly_error()` mapping the taxonomy to human replies (`ExtractionFailed` and
+  unexpected exceptions share a generic fallback; unexpected ones re-raise after
+  replying). `AuthExpired` additionally DMs `ADMIN_USER_ID` (best-effort, never breaks
+  the user reply). Temp download dir is rmtree'd in a `finally`. Catch-all handlers:
+  whitelisted non-text → usage hint; non-whitelisted anything → polite refusal.
+  **Decision:** `UnsupportedUrl` from parsing is answered directly without creating a
+  status message (nothing was ever going to be downloaded).
+- `main.py`: `run()` builds `Bot` (custom `TelegramAPIServer.from_base` session when
+  `TELEGRAM_API_URL` is set), `Dispatcher` with `config`/`media_router` injected as
+  workflow data, `delete_webhook()` then long polling. `build_media_router()` registers
+  `InstagramProvider(cookies_file, download_dir)` under "instagram".
+- README: "Running the bot locally" section (BotFather token, user id via @userinfobot,
+  leave `TELEGRAM_API_URL` empty until Docker phase); status updated to phases 0–3.
+- Tests (+36, total 120 passed / 2 skipped): config parsing (required/optional/empty-var
+  cases), caption splitting (limit boundaries, chunking), `send_post` against an
+  `AsyncMock` bot (single video kwargs, album caption placement, >10-item chunking,
+  follow-up text, returned messages), handlers (URL extraction, error mapping, whitelist
+  filter, and the full link-handler flow with a fake provider: happy path incl. temp-dir
+  cleanup, no-URL hint, unsupported URL, RateLimited edits status without admin ping,
+  AuthExpired pings admin, delivery crash cleans up + re-raises). Ruff check/format clean.
+- **Done-criterion still pending:** the live end-to-end run against real Telegram needs a
+  `BOT_TOKEN` (none exists yet — no `.env` in the repo). Next step for the user: create a
+  bot via @BotFather, fill `.env` per the new README section, run
+  `uv run python -m reelsbot`, and send both example links.
+
+## 2026-08-29 — .env, first commit, branch rename
+
+- Answered setup questions (in chat): `.env` paths are host paths when running locally
+  and container paths (`/data/...`) only once the Phase 5 Docker stack mounts them;
+  how to create the Telegram application on my.telegram.org; how the Local Bot API
+  Server deployment works (aiogram/telegram-bot-api container, `--local` mode, `logOut`
+  token migration, shared volume).
+- User couldn't create the my.telegram.org application (VPN-related "ERROR"; Telegram
+  blocked without VPN). **Decision:** proceed without it — `api_id`/`api_hash` are only
+  needed by the Local Bot API Server in Phase 5; Phase 3 uses cloud api.telegram.org
+  with just the bot token. Fallbacks for Phase 5: retry the form later / from the VPS
+  IP, or ship in 50 MB cloud mode and add the local server afterwards (env-only change).
+- User created the bot (@darkartheme_reels_scraper_bot) and filled `.env` (cloud API,
+  one whitelisted user who is also admin, `IG_COOKIES_FILE=cookies.txt`,
+  `DOWNLOAD_DIR=/tmp/reels-downloads`). Verified: `Config.from_env()` parses it, the
+  cookies file exists, `getMe` succeeds with the token, and `.env`/`cookies.txt`/
+  `cache.sqlite3` are all git-ignored.
+- Renamed the branch `main` → `master` (no commits existed yet) and made the initial
+  commit: everything from Phases 0–3 (workspace, mediagrab library, Instagram provider,
+  bot MVP, tests, CI, docs).
