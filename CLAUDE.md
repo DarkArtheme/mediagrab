@@ -5,6 +5,10 @@ Always communicate with the user in English in this project.
 Do not use persistent memory for this project. Instead, record every project action (decisions,
 files created/changed, phases completed) as an entry in `worklog.md` at the repo root.
 
+Commit after any changes: whenever you change files in this repo (code, docs, worklog),
+finish the task by committing the result to `master`. Never commit secrets (`.env`,
+`cookies.txt`, databases — all git-ignored).
+
 ## What this project is
 
 A monorepo with two Python packages:

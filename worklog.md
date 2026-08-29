@@ -193,3 +193,5 @@ All project actions are recorded here, newest entry last.
 - Renamed the branch `main` → `master` (no commits existed yet) and made the initial
   commit: everything from Phases 0–3 (workspace, mediagrab library, Instagram provider,
   bot MVP, tests, CI, docs).
+- Per user instruction, added a rule to CLAUDE.md: commit to `master` after any file
+  changes (secrets stay git-ignored, never committed).
