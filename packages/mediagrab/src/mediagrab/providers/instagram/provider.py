@@ -3,6 +3,7 @@ yt-dlp fallback for plain video posts."""
 
 from __future__ import annotations
 
+import logging
 import tempfile
 from pathlib import Path
 
@@ -10,6 +11,8 @@ from mediagrab.errors import ExtractionFailed, UnsupportedUrl
 from mediagrab.models import MediaItem, MediaPost
 from mediagrab.providers.instagram import gallerydl, ytdlp
 from mediagrab.router import Route, parse_url
+
+log = logging.getLogger(__name__)
 
 _VIDEO_SUFFIXES = {".mp4", ".m4v", ".mov", ".webm"}
 
@@ -46,8 +49,10 @@ class InstagramProvider:
 
         try:
             post = await self._resolve_gallery(route, dest_dir)
-        except ExtractionFailed:
+        except ExtractionFailed as err:
             # gallery-dl choked outright; a plain video /p/ post is the usual cause.
+            # Log the swallowed reason so a broken gallery-dl setup stays diagnosable.
+            log.warning("gallery-dl failed for %s, falling back to yt-dlp: %s", route.uid, err)
             post = None
         if post is None:
             return await self._resolve_video(route, dest_dir)

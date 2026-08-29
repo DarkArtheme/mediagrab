@@ -73,6 +73,7 @@ class TestSendPost:
         assert kwargs["width"] == 1080
         assert kwargs["height"] == 1920
         assert kwargs["duration"] == 13
+        assert kwargs["request_timeout"] > 60  # big uploads outlive the default timeout
         bot.send_media_group.assert_not_awaited()
         bot.send_message.assert_not_awaited()
 

@@ -235,3 +235,25 @@ All project actions are recorded here, newest entry last.
 - Done-criterion "re-sending a link replies instantly without touching Instagram" —
   unit-verified (cache-hit path never calls the provider); live confirmation shares
   the pending Phase 3 end-to-end run.
+
+## 2026-08-29 — Live-test round 1: two bugs found and fixed
+
+- Ran the bot locally (background process, logs to a scratchpad file); user sent the
+  two example links. Both failed; log analysis found two independent bugs:
+  1. **Reel: `TelegramNetworkError: Request timeout error` on `send_video`** — the
+     ~27 MB upload through cloud api.telegram.org exceeded aiogram's default 60 s
+     request timeout. Fix: `delivery.py` passes `request_timeout=UPLOAD_TIMEOUT`
+     (300 s) on `send_video`/`send_photo`/`send_media_group`.
+  2. **Photo post: `ExtractionFailed` ("yt-dlp … No video formats found") in 1.8 s** —
+     gallery-dl was never really tried: it's installed only in the venv, and the bot
+     was launched via `.venv/bin/python -m reelsbot` directly, so PATH lacked
+     `.venv/bin`; gallery-dl → instant "not installed" → silent fallback to the
+     *global* `~/.local/bin/yt-dlp`, which correctly refuses a photo post. (Manual
+     `gallery-dl --cookies cookies.txt <post>` worked fine.) Fix:
+     `mediagrab/_proc.tool_path(name)` resolves each tool next to `sys.executable`
+     (the venv's pinned copy) first, falling back to PATH; both wrappers use it.
+     Bonus: the provider now logs the swallowed gallery-dl error before the yt-dlp
+     fallback so this failure mode stays diagnosable.
+- Tests updated: provider assertions compare `Path(cmd[0]).name`; delivery asserts
+  `request_timeout > 60` on video sends. 141 passed / 2 skipped, ruff clean.
+- Bot restarted with the fixes; awaiting live re-test (reel, post, reel-again).

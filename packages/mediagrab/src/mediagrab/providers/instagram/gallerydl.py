@@ -26,7 +26,7 @@ async def extract_gallery(
     post), which the provider treats as a cue to fall back to yt-dlp.
     """
     cmd = [
-        "gallery-dl",
+        _proc.tool_path("gallery-dl"),
         "--write-metadata",
         "--directory",
         str(dest_dir),

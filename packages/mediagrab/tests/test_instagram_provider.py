@@ -84,7 +84,7 @@ async def test_reel_resolves_to_video_post(monkeypatch, tmp_path):
     assert item.path.exists() and item.path.suffix == ".mp4"
     # Only yt-dlp ran, with the cookies file threaded through.
     [cmd] = calls
-    assert cmd[0] == "yt-dlp"
+    assert Path(cmd[0]).name == "yt-dlp"
     assert _flag_value(cmd, "--cookies") == "/data/ig.txt"
 
 
@@ -136,7 +136,7 @@ async def test_video_only_post_falls_back_to_ytdlp(monkeypatch, tmp_path):
 
     post = await provider.resolve(POST_URL)
 
-    assert [c[0] for c in calls] == ["gallery-dl", "yt-dlp"]
+    assert [Path(c[0]).name for c in calls] == ["gallery-dl", "yt-dlp"]
     assert post.items[0].kind == "video"
     assert post.uid == "DWTPjRXE5WS"
 

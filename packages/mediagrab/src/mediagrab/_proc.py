@@ -8,10 +8,23 @@ raw OS exceptions past the provider.
 from __future__ import annotations
 
 import asyncio
+import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 from mediagrab.errors import ExtractionFailed
+
+
+def tool_path(name: str) -> str:
+    """Resolve ``name`` to the copy installed alongside the current interpreter
+    (the venv's pinned version) when it exists; otherwise leave it to PATH.
+
+    Without this, a bot launched via the venv's python directly (not through
+    ``uv run``) would miss venv-only tools or pick up unpinned global ones.
+    """
+    candidate = Path(sys.executable).with_name(name)
+    return str(candidate) if candidate.exists() else name
 
 
 @dataclass(slots=True)

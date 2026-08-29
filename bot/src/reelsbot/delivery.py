@@ -23,6 +23,10 @@ CAPTION_LIMIT = 1024
 TEXT_LIMIT = 4096
 ALBUM_LIMIT = 10
 
+# Media uploads can far outlive aiogram's default 60s request timeout
+# (a reel is tens of MB going through the cloud Bot API).
+UPLOAD_TIMEOUT = 300
+
 
 def split_caption(text: str) -> tuple[str, list[str]]:
     """Return ``(media_caption, follow_up_messages)`` for ``text``.
@@ -80,6 +84,7 @@ async def _deliver(
                     width=payload.width,
                     height=payload.height,
                     duration=payload.duration,
+                    request_timeout=UPLOAD_TIMEOUT,
                 )
             )
         else:
@@ -88,6 +93,7 @@ async def _deliver(
                     chat_id=chat_id,
                     photo=payload.media,
                     caption=caption or None,
+                    request_timeout=UPLOAD_TIMEOUT,
                 )
             )
     else:
@@ -98,7 +104,11 @@ async def _deliver(
             for payload in chunk:
                 media.append(_input_media(payload, (caption or None) if first else None))
                 first = False
-            sent.extend(await bot.send_media_group(chat_id=chat_id, media=media))
+            sent.extend(
+                await bot.send_media_group(
+                    chat_id=chat_id, media=media, request_timeout=UPLOAD_TIMEOUT
+                )
+            )
 
     for text in follow_ups:
         sent.append(await bot.send_message(chat_id=chat_id, text=text))

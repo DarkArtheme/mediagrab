@@ -21,7 +21,7 @@ async def extract_video(
 ) -> tuple[Path, dict]:
     """Download the video at ``url`` into ``dest_dir``; return (file path, metadata)."""
     cmd = [
-        "yt-dlp",
+        _proc.tool_path("yt-dlp"),
         "--no-warnings",
         "--no-progress",
         "--dump-json",
