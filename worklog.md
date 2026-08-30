@@ -348,3 +348,41 @@ All project actions are recorded here, newest entry last.
 - Note: yt-dlp warns "extractor is attempting impersonation, but no
   impersonate target is available" — extraction works anyway; if TikTok ever
   starts hard-requiring it, installing `curl-cffi` in the image is the fix.
+
+## 2026-08-30 — Standalone-library API: MediaGrab facade, batch fetch, CLI (v0.2.0)
+
+Goal: make `mediagrab` directly usable outside the bot — specifically by an AI
+agent that takes a list of reel/TikTok links, downloads them, and analyzes the
+videos. Everything is additive; the bot's wiring is untouched.
+
+- **`grab.py` (new)**: `MediaGrab` facade hides router/provider wiring —
+  constructor takes `download_dir`, `instagram_cookies` (default
+  `$IG_COOKIES_FILE`), `tiktok_cookies` (default `$TIKTOK_COOKIES_FILE`),
+  `timeout`, or a prebuilt `router` for custom providers. `fetch(url) ->
+  MediaPost`; `fetch_many(urls, concurrency=2) -> list[GrabResult]` — batch is
+  never fail-fast: each URL yields `GrabResult(url, post|error)`, only
+  `MediaGrabError` is captured (anything else is a provider-contract bug and
+  propagates). Semaphore-bounded concurrency, default 2 to respect rate limits.
+- **Serialization**: `MediaItem.to_dict()` / `MediaPost.to_dict()` /
+  `GrabResult.to_dict()` — JSON-safe (paths as strings, error as
+  `{type, message}`), for persisting metadata next to downloaded files.
+- **CLI (new)**: `mediagrab URL... [--input file|-] [--out DIR] [--ig-cookies]
+  [--tiktok-cookies] [--concurrency] [--timeout]` via `[project.scripts]` +
+  `__main__.py`. JSONL to stdout (one object per URL), progress to stderr;
+  exit 0/1/2 (all ok / some failed / usage error). Machine-first so an agent
+  can shell out instead of importing.
+- **Exports/version**: `MediaGrab`, `GrabResult` added to `__init__`;
+  package bumped to 0.2.0.
+- **README (mediagrab)**: rewritten as standalone docs — install (local path /
+  git subdirectory; repo has no remote yet so the git URL is a placeholder),
+  cookies setup, Python API + batch example, data model, error taxonomy, CLI
+  JSONL contract, and an "using it from an AI agent" section (analyze caption +
+  files, store by `uid`, treat `AuthExpired` as cookie refresh).
+- **Tests**: `test_grab.py` (facade via injected fake-provider router: order
+  preservation, error capture incl. `UnsupportedUrl`, empty batch, env cookie
+  fallback, to_dict shapes) and `test_cli.py` (monkeypatched `MediaGrab`:
+  JSONL output, exit codes, `--input` comment/blank handling, option
+  passthrough). 104 passed / 4 skipped in the package; ruff clean.
+- Decision: kept the package inside the monorepo (already pip-installable on
+  its own; installable via git `#subdirectory=`). Splitting into a separate
+  repo is possible later without code changes.
