@@ -1,0 +1,35 @@
+# Full stack: the bot + the Local Bot API Server (2 GB upload limit).
+# BOT_VERSION pins the image tag (defaults to "dev" for local builds); set it
+# in .env or the shell to match the bot/pyproject.toml version being deployed.
+services:
+  telegram-bot-api:
+    image: aiogram/telegram-bot-api:latest
+    environment:
+      TELEGRAM_API_ID: ${TELEGRAM_API_ID}
+      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH}
+    volumes:
+      - telegram-bot-api-data:/var/lib/telegram-bot-api
+    restart: unless-stopped
+
+  bot:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        VERSION: ${BOT_VERSION:-dev}
+    image: reelsbot:${BOT_VERSION:-dev}
+    env_file: .env
+    environment:
+      TELEGRAM_API_URL: http://telegram-bot-api:8081
+      IG_COOKIES_FILE: /data/cookies/instagram.txt
+      DB_PATH: /data/db/cache.sqlite3
+    volumes:
+      - ./cookies.txt:/data/cookies/instagram.txt:ro
+      - db-data:/data/db
+    depends_on:
+      - telegram-bot-api
+    restart: unless-stopped
+
+volumes:
+  telegram-bot-api-data:
+  db-data:

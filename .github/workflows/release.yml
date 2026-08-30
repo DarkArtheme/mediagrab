@@ -1,0 +1,77 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "mediagrab-v*"
+      - "bot-v*"
+
+jobs:
+  # mediagrab-vX.Y.Z → build the wheel/sdist, attach to a GitHub Release.
+  library:
+    if: startsWith(github.ref_name, 'mediagrab-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check tag matches package version
+        run: |
+          tag_version="${GITHUB_REF_NAME#mediagrab-v}"
+          pkg_version="$(python3 -c "import tomllib;print(tomllib.load(open('packages/mediagrab/pyproject.toml','rb'))['project']['version'])")"
+          if [ "$tag_version" != "$pkg_version" ]; then
+            echo "tag says $tag_version but pyproject.toml says $pkg_version" >&2
+            exit 1
+          fi
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Build distributions
+        run: uv build --package mediagrab
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "$GITHUB_REF_NAME" --generate-notes
+
+  # bot-vX.Y.Z → build the Docker image, push to GHCR as X.Y.Z, X.Y, latest.
+  image:
+    if: startsWith(github.ref_name, 'bot-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check tag matches package version
+        run: |
+          tag_version="${GITHUB_REF_NAME#bot-v}"
+          pkg_version="$(python3 -c "import tomllib;print(tomllib.load(open('bot/pyproject.toml','rb'))['project']['version'])")"
+          if [ "$tag_version" != "$pkg_version" ]; then
+            echo "tag says $tag_version but pyproject.toml says $pkg_version" >&2
+            exit 1
+          fi
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Build and push
+        run: |
+          version="${GITHUB_REF_NAME#bot-v}"
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/reelsbot"
+          docker build -f docker/Dockerfile \
+            --build-arg VERSION="$version" \
+            -t "$image:$version" \
+            -t "$image:${version%.*}" \
+            -t "$image:latest" \
+            .
+          docker push --all-tags "$image"

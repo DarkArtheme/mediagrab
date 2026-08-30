@@ -29,6 +29,24 @@ docker compose up -d --build             # full stack: bot + local Bot API serve
 
 Copy `.env.example` to `.env` and fill in the values before running the bot.
 
+## Releases & versioning
+
+Both components follow [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH), versioned
+independently; each `pyproject.toml` is the single source of truth (`__version__` reads it via
+package metadata). To cut a release:
+
+```bash
+scripts/release.sh mediagrab 0.3.0   # or: scripts/release.sh bot 0.2.0
+git push origin master --follow-tags
+```
+
+The script bumps the version, runs lint + tests, commits, and creates the tag
+(`mediagrab-vX.Y.Z` / `bot-vX.Y.Z`). On push, CI verifies the tag matches the package version,
+then: library tags get a wheel/sdist attached to a GitHub Release; bot tags get the Docker
+image built and pushed to `ghcr.io/<owner>/reelsbot` as `X.Y.Z`, `X.Y`, and `latest`
+(the version is also stamped into the image's `org.opencontainers.image.version` label).
+Local compose builds tag the image `reelsbot:${BOT_VERSION:-dev}`.
+
 ### Running the bot locally
 
 1. Create a bot with [@BotFather](https://t.me/BotFather) (`/newbot`) and put the token in

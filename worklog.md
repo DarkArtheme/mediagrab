@@ -393,3 +393,30 @@ CI review found the push trigger pointed at `main`, but all commits land on
 `master`, so push CI would never fire. Changed `ci.yml` to
 `branches: [master]`. Everything else in the workflow matches the current
 workspace (uv sync --all-packages, ruff, pytest with live tests auto-skipped).
+
+## 2026-08-31 — Semantic versioning for the library and the bot Docker image
+
+- **Single source of truth**: `__version__` in both `mediagrab` and `reelsbot`
+  now reads from package metadata (`importlib.metadata.version`) with an
+  `0.0.0+unknown` fallback; only `pyproject.toml` holds the number.
+- **`scripts/release.sh <mediagrab|bot> <X.Y.Z>`**: validates strict semver,
+  refuses dirty tree / existing tag / same version, bumps the pyproject, runs
+  `uv sync` + ruff + pytest, commits `Release <c> vX.Y.Z`, tags
+  `mediagrab-vX.Y.Z` or `bot-vX.Y.Z`. All guard branches tested.
+- **Docker (Phase 5 files created here since image versioning needs them)**:
+  `docker/Dockerfile` — python:3.12-slim + uv 0.12 (matches uv_build pin) +
+  ffmpeg, `uv sync --frozen --no-dev`, venv on PATH (so `_proc.tool_path`
+  finds pinned yt-dlp/gallery-dl), non-root user, `ARG VERSION` → OCI labels.
+  `docker-compose.yml` — bot (image `reelsbot:${BOT_VERSION:-dev}`, env
+  overrides pointing at container paths, cookies ro-mount, db volume) +
+  `aiogram/telegram-bot-api` with its data volume; `BOT_VERSION=dev` added to
+  `.env.example`. Verified: image builds, label carries version, in-container
+  check shows reelsbot 0.1.0 / mediagrab 0.2.0 / yt-dlp / gallery-dl / ffmpeg
+  all resolvable; `docker compose config` parses. NOT yet live-tested against
+  Telegram (Phase 5 "done when" — compose up on VPS — still open).
+- **`.github/workflows/release.yml`**: on tag push — guard that tag version ==
+  pyproject version; `mediagrab-v*` → `uv build --package mediagrab` + GitHub
+  Release with dist artifacts; `bot-v*` → docker build with `VERSION` arg,
+  push to `ghcr.io/<owner>/reelsbot` as X.Y.Z, X.Y, latest (GITHUB_TOKEN, no
+  extra secrets). Inert until a GitHub remote exists.
+- **README**: new "Releases & versioning" section.
