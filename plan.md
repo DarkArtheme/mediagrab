@@ -122,12 +122,46 @@ changes; upgrading them is the first fix to try).
 **Done when:** a week of normal use requires no manual intervention besides (rarely) refreshing
 cookies.
 
+### Phase 7 — TikTok provider
+
+Decisions (locked 2026-08-30): videos **and** photo slideshows in the first version; slideshows
+deliver photos + caption only (no music track); **anonymous** access — no cookies by default,
+but an optional `TIKTOK_COOKIES_FILE` env is threaded through so a burner account can be added
+later without code changes; no proxy work (VPS region reaches TikTok fine).
+
+- **Router**: add TikTok hosts and URL shapes:
+  - `tiktok.com/@user/video/<id>` → kind `video`, uid `<id>`
+  - `tiktok.com/@user/photo/<id>` → kind `photo`, uid `<id>`
+  - short links `vm.tiktok.com/<token>`, `vt.tiktok.com/<token>`, `tiktok.com/t/<token>` →
+    kind `unknown` — the post id and video/photo kind are hidden behind a redirect. The router
+    stays offline; the **provider** resolves the redirect (one anonymous GET, no auth) and then
+    dispatches. `MediaPost.uid` is always the resolved numeric id, so the cache converges even
+    when two users paste different short tokens for the same post. `PostKind` widens to a
+    per-provider literal (`video`/`photo`/`unknown` for TikTok).
+- **Provider layout** mirrors Instagram: `providers/tiktok/{provider.py, ytdlp.py, gallerydl.py}`.
+  - `ytdlp.py`: `yt-dlp --dump-json` + download for `/video/` posts; prefer H.264 formats (same
+    lesson as IG black-screen fix); `description` → caption, `uploader` → author; no cookies
+    passed unless `TIKTOK_COOKIES_FILE` is set.
+  - `gallerydl.py`: gallery-dl for `/photo/` slideshows (yt-dlp is flaky there); ordered photos,
+    caption from metadata. If gallery-dl proves unreliable in live testing, fall back to a
+    `__UNIVERSAL_DATA_FOR_REHYDRATION__` mini-parser as plan B.
+  - A `/video/` URL that turns out to be a slideshow (or vice versa) falls through to the other
+    extractor, same pattern as the IG `/p/`-video fallback.
+- **Errors**: map geo-block / "video unavailable" / private-account / rate-limit stderr patterns
+  onto the existing taxonomy (`PostUnavailable`, `RateLimited`, `ExtractionFailed`;
+  `AuthExpired` only if cookies are configured).
+- **Bot**: no handler/delivery changes (provider-agnostic by design); `config.py` gains the
+  optional `TIKTOK_COOKIES_FILE` passthrough; cache uids namespaced per provider
+  (`tiktok:<id>`) to rule out cross-provider collisions.
+- **Tests**: router unit tests for every URL shape incl. junk query params; mocked-subprocess
+  fixtures for video, slideshow, unavailable, geo-blocked; live smoke tests behind the existing
+  env flag using real sample links (video, slideshow, short link).
+
+**Done when:** pasting a TikTok video link, photo-slideshow link, and a `vm.tiktok.com` short
+link each produce correct replies end-to-end; repeated links answered from cache.
+
 ## Future (designed-for, not built now)
 
-- **TikTok provider**: yt-dlp handles TikTok videos anonymously (no watermark, description
-  included, short `vm.tiktok.com` links resolve automatically) — maps straight onto the provider
-  interface. Photo slideshows are flaky in yt-dlp; plan gallery-dl or an
-  `__UNIVERSAL_DATA_FOR_REHYDRATION__` mini-parser for those.
 - **Paid fallback provider**: ScrapeCreators (~$1–2/1000 posts) or Apify as an
   `InstagramApiProvider`; router gains an ordered fallback chain (cookies-based first, paid on
   failure). Proxy support (env `PROXY_URL`) threaded into subprocess calls for scaling.

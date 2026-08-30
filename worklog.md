@@ -286,3 +286,21 @@ All project actions are recorded here, newest entry last.
   `uv sync --quiet`, then `exec uv run python -m reelsbot` (the bot loads `.env`
   itself via `load_dotenv()`). Smoke-tested: bot starts polling and shuts down
   cleanly on SIGTERM.
+
+## 2026-08-30 — TikTok provider: plan (Phase 7)
+
+- Scoped the TikTok provider with the user via Q&A. Locked decisions:
+  videos + photo slideshows both in v1; slideshows deliver photos + caption
+  only (no music track); anonymous access (no cookies by default, optional
+  `TIKTOK_COOKIES_FILE` env threaded through for a future burner account);
+  no proxy work — the VPS region reaches TikTok fine.
+- Wrote **Phase 7 — TikTok provider** into `plan.md` (moved TikTok out of the
+  "Future" section): router gains TikTok hosts incl. `vm.tiktok.com` /
+  `vt.tiktok.com` / `tiktok.com/t/` short links whose kind+id are unknown
+  until the provider resolves the redirect (router stays offline); provider
+  mirrors the Instagram layout (yt-dlp for `/video/`, gallery-dl for
+  `/photo/`, mutual fallback); cache uids namespaced `tiktok:<id>`; errors
+  mapped to the existing taxonomy; mocked-fixture tests + live smoke tests
+  behind the env flag.
+- Waiting on the user for sample public TikTok links (video, slideshow,
+  short link) to capture fixtures and run live smoke tests.
