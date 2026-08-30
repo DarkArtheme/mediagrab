@@ -33,7 +33,24 @@ Copy `.env.example` to `.env` and fill in the values before running the bot.
 
 Both components follow [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH), versioned
 independently; each `pyproject.toml` is the single source of truth (`__version__` reads it via
-package metadata). To cut a release:
+package metadata).
+
+What counts as what:
+
+- **MAJOR** — breaking the public contract. For `mediagrab`: the
+  `Provider.resolve(url) -> MediaPost` interface, the `MediaPost`/`MediaItem` fields, the error
+  taxonomy, the CLI's JSONL shape/exit codes, or `uid` stability (uids are cache keys — changing
+  their format invalidates every consumer's cache). For the bot: env vars/volumes it requires,
+  or the cache DB schema.
+- **MINOR** — backwards-compatible features: a new provider or URL shape, new optional
+  fields/arguments/CLI flags, new bot commands.
+- **PATCH** — fixes with no contract change: extractor breakage repairs, yt-dlp/gallery-dl
+  bumps, format-selection tweaks, dependency updates.
+
+While MAJOR is 0, minor bumps may still break things (normal SemVer caveat) — note breaks in
+the release notes.
+
+To cut a release:
 
 ```bash
 scripts/release.sh mediagrab 0.3.0   # or: scripts/release.sh bot 0.2.0

@@ -420,3 +420,11 @@ workspace (uv sync --all-packages, ruff, pytest with live tests auto-skipped).
   push to `ghcr.io/<owner>/reelsbot` as X.Y.Z, X.Y, latest (GITHUB_TOKEN, no
   extra secrets). Inert until a GitHub remote exists.
 - **README**: new "Releases & versioning" section.
+
+## 2026-08-31 — Document project-specific SemVer bump rules
+
+README "Releases & versioning" now spells out what MAJOR/MINOR/PATCH mean for
+this codebase (MAJOR = MediaPost/Provider contract, error taxonomy, CLI JSONL
+shape, uid format, bot env/DB schema; MINOR = new providers/flags; PATCH =
+extractor fixes and tool bumps), plus the 0.x caveat. Release mechanics were
+already documented there in the previous entry.
