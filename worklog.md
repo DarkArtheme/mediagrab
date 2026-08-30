@@ -386,3 +386,10 @@ videos. Everything is additive; the bot's wiring is untouched.
 - Decision: kept the package inside the monorepo (already pip-installable on
   its own; installable via git `#subdirectory=`). Splitting into a separate
   repo is possible later without code changes.
+
+## 2026-08-31 — CI: fix push trigger branch
+
+CI review found the push trigger pointed at `main`, but all commits land on
+`master`, so push CI would never fire. Changed `ci.yml` to
+`branches: [master]`. Everything else in the workflow matches the current
+workspace (uv sync --all-packages, ruff, pytest with live tests auto-skipped).
