@@ -4,6 +4,7 @@ yt-dlp fallback for plain video posts."""
 from __future__ import annotations
 
 import logging
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -44,6 +45,14 @@ class InstagramProvider:
             self._download_dir.mkdir(parents=True, exist_ok=True)
         dest_dir = Path(tempfile.mkdtemp(prefix=f"ig-{route.uid}-", dir=self._download_dir))
 
+        try:
+            return await self._resolve_in(route, dest_dir)
+        except BaseException:
+            # On success the caller owns dest_dir; on failure nobody would.
+            shutil.rmtree(dest_dir, ignore_errors=True)
+            raise
+
+    async def _resolve_in(self, route: Route, dest_dir: Path) -> MediaPost:
         if route.kind == "reel":
             return await self._resolve_video(route, dest_dir)
 

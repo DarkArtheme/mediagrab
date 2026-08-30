@@ -309,3 +309,123 @@ class TestHandleLink:
         assert not post.items[0].path.parent.exists()
         assert cache.get(REEL_UID) is None
         assert gate.acquire_user(111) is True
+
+
+class FlakyProvider:
+    """Provider double that raises the queued errors first, then succeeds."""
+
+    def __init__(self, post: MediaPost, errors: list[Exception]) -> None:
+        self.post = post
+        self.errors = errors
+        self.calls: list[str] = []
+
+    async def resolve(self, url: str) -> MediaPost:
+        self.calls.append(url)
+        if self.errors:
+            raise self.errors.pop(0)
+        return self.post
+
+
+class TestRetryOnce:
+    async def test_transient_failure_retried_and_succeeds(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        cache: CacheRepository,
+        gate: ExtractionGate,
+    ) -> None:
+        post = make_post(tmp_path)
+        provider = FlakyProvider(post, errors=[ExtractionFailed("blip")])
+        media_router = MediaRouter()
+        media_router.register("instagram", provider)
+        monkeypatch.setattr(handlers.delivery, "send_post", AsyncMock(return_value=[SENT_VIDEO]))
+        message, bot = make_message(), AsyncMock()
+
+        await handlers.handle_link(message, bot, CONFIG, media_router, cache, gate)
+
+        assert provider.calls == [REEL_URL, REEL_URL]  # one retry
+        message.answer.return_value.delete.assert_awaited_once()  # ended in success
+        assert cache.get(REEL_UID) is not None
+
+    async def test_second_failure_not_retried_again(
+        self, tmp_path: Path, cache: CacheRepository, gate: ExtractionGate
+    ) -> None:
+        post = make_post(tmp_path)
+        provider = FlakyProvider(post, errors=[ExtractionFailed("a"), ExtractionFailed("b")])
+        media_router = MediaRouter()
+        media_router.register("instagram", provider)
+        message, bot = make_message(), AsyncMock()
+
+        await handlers.handle_link(message, bot, CONFIG, media_router, cache, gate)
+
+        assert provider.calls == [REEL_URL, REEL_URL]  # exactly two attempts
+        status = message.answer.return_value
+        status.edit_text.assert_awaited_once_with(handlers._FALLBACK_REPLY)
+
+    async def test_stable_errors_not_retried(
+        self, cache: CacheRepository, gate: ExtractionGate
+    ) -> None:
+        provider = FakeProvider(error=PostUnavailable("gone"))
+        message, bot = make_message(), AsyncMock()
+
+        await handlers.handle_link(message, bot, CONFIG, make_router(provider), cache, gate)
+
+        assert provider.calls == [REEL_URL]  # no retry for non-transient errors
+
+
+class TestAdminOnly:
+    async def test_allows_admin(self) -> None:
+        assert await handlers.AdminOnly()(make_message(user_id=999), CONFIG) is True
+
+    async def test_denies_non_admin(self) -> None:
+        assert await handlers.AdminOnly()(make_message(user_id=111), CONFIG) is False
+
+
+class TestHealth:
+    async def test_reports_all_sections(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cache: CacheRepository
+    ) -> None:
+        cookies = tmp_path / "ig.txt"
+        cookies.write_text("# netscape cookies")
+        config = replace_config(CONFIG, ig_cookies_file=cookies)
+        versions = {"yt-dlp": "2026.01.01", "gallery-dl": None}
+
+        async def fake_tool_version(tool: str, **kwargs: object) -> str | None:
+            return versions[tool]
+
+        monkeypatch.setattr(handlers.diagnostics, "tool_version", fake_tool_version)
+        message = make_message(text="/health", user_id=999)
+
+        from time import monotonic
+
+        await handlers.cmd_health(message, config, cache, started_at=monotonic() - 3600)
+
+        reply = message.answer.await_args.args[0]
+        assert "reelsbot" in reply and "mediagrab" in reply
+        assert "✅ yt-dlp 2026.01.01" in reply
+        assert "❌ gallery-dl" in reply
+        assert f"✅ IG cookies: {cookies}" in reply
+        assert "TikTok cookies: not configured" in reply
+        assert "✅ cache: 0 post(s)" in reply
+        assert "uptime: 1h 0m" in reply
+
+    async def test_missing_cookies_flagged(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cache: CacheRepository
+    ) -> None:
+        async def fake_tool_version(tool: str, **kwargs: object) -> str | None:
+            return "1.0"
+
+        monkeypatch.setattr(handlers.diagnostics, "tool_version", fake_tool_version)
+        config = replace_config(CONFIG, ig_cookies_file=tmp_path / "gone.txt")
+        message = make_message(text="/health", user_id=999)
+
+        await handlers.cmd_health(message, config, cache, started_at=0.0)
+
+        reply = message.answer.await_args.args[0]
+        assert "❌ IG cookies" in reply and "does not exist" in reply
+
+
+def replace_config(config: Config, **changes: object) -> Config:
+    from dataclasses import replace as dc_replace
+
+    return dc_replace(config, **changes)

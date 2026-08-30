@@ -62,3 +62,29 @@ class TestSlot:
             async with gate.slot():
                 pass
         assert monotonic() - start < 0.05
+
+
+class TestWaitIdle:
+    async def test_idle_gate_returns_immediately(self) -> None:
+        gate = ExtractionGate()
+        assert gate.busy_count() == 0
+        assert await gate.wait_idle(timeout=0.01) is True
+
+    async def test_waits_for_job_to_finish(self) -> None:
+        gate = ExtractionGate()
+        gate.acquire_user(1)
+        assert gate.busy_count() == 1
+
+        async def finish_soon() -> None:
+            await asyncio.sleep(0.02)
+            gate.release_user(1)
+
+        task = asyncio.create_task(finish_soon())
+        assert await gate.wait_idle(timeout=1.0, poll_interval=0.005) is True
+        await task
+
+    async def test_timeout_with_stuck_job(self) -> None:
+        gate = ExtractionGate()
+        gate.acquire_user(1)
+        assert await gate.wait_idle(timeout=0.02, poll_interval=0.005) is False
+        assert gate.busy_count() == 1

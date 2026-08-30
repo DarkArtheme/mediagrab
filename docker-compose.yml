@@ -23,12 +23,17 @@ services:
       TELEGRAM_API_URL: http://telegram-bot-api:8081
       IG_COOKIES_FILE: /data/cookies/instagram.txt
       DB_PATH: /data/db/cache.sqlite3
+      # Fixed path (not the system tmp) so the startup sweep can clear
+      # download dirs a crashed run left behind.
+      DOWNLOAD_DIR: /data/tmp
     volumes:
       - ./cookies.txt:/data/cookies/instagram.txt:ro
       - db-data:/data/db
     depends_on:
       - telegram-bot-api
     restart: unless-stopped
+    # Must exceed the bot's SHUTDOWN_GRACE (30s) so in-flight jobs can drain.
+    stop_grace_period: 45s
 
 volumes:
   telegram-bot-api-data:

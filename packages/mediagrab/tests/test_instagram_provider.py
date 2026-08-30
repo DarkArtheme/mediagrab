@@ -200,3 +200,20 @@ async def test_missing_binary_maps_to_extraction_failed():
 async def test_timeout_maps_to_extraction_failed():
     with pytest.raises(ExtractionFailed, match="timed out"):
         await _proc.run_tool(["sleep", "5"], timeout=0.1)
+
+
+async def test_failed_extraction_removes_temp_dir(monkeypatch, tmp_path):
+    install_fakes(monkeypatch, ytdlp=lambda cmd: ToolResult(1, "", "ERROR: something exploded"))
+    provider = InstagramProvider(download_dir=tmp_path)
+
+    with pytest.raises(ExtractionFailed):
+        await provider.resolve(REEL_URL)
+    assert list(tmp_path.iterdir()) == []  # no leaked ig-* dir
+
+
+async def test_successful_extraction_keeps_temp_dir(monkeypatch, tmp_path):
+    install_fakes(monkeypatch, ytdlp=fake_ytdlp_ok)
+    provider = InstagramProvider(download_dir=tmp_path)
+
+    post = await provider.resolve(REEL_URL)
+    assert post.items[0].path.is_file()  # the caller owns cleanup

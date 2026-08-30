@@ -35,6 +35,23 @@ class ExtractionGate:
     def release_user(self, user_id: int) -> None:
         self._busy_users.discard(user_id)
 
+    def busy_count(self) -> int:
+        """Number of users with an in-flight job."""
+        return len(self._busy_users)
+
+    async def wait_idle(self, timeout: float, poll_interval: float = 0.5) -> bool:
+        """Wait until no jobs are in flight; False if ``timeout`` expired first.
+
+        Used at shutdown: aiogram stops polling but does not await running
+        handler tasks, so the bot drains them here before closing resources.
+        """
+        deadline = monotonic() + timeout
+        while self._busy_users:
+            if monotonic() >= deadline:
+                return False
+            await asyncio.sleep(min(poll_interval, deadline - monotonic()))
+        return True
+
     @asynccontextmanager
     async def slot(self) -> AsyncIterator[None]:
         """Hold an extraction slot: bounded concurrency, spaced-out starts."""

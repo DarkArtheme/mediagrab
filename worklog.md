@@ -428,3 +428,46 @@ this codebase (MAJOR = MediaPost/Provider contract, error taxonomy, CLI JSONL
 shape, uid format, bot env/DB schema; MINOR = new providers/flags; PATCH =
 extractor fixes and tool bumps), plus the 0.x caveat. Release mechanics were
 already documented there in the previous entry.
+
+## 2026-08-31 — Phase 6: Hardening
+
+- **Structured logging**: every link job in `handlers.handle_link` now logs under a
+  `req=<8-hex>` tag with `uid=`, `user=`, and timings — cache hits log `total=`,
+  fresh jobs log `extract=`/`deliver=`/`total=`, failures log elapsed time. Grep one
+  request id to follow a job end to end.
+- **Retry-once**: `_resolve_with_retry` retries `ExtractionFailed` exactly once
+  (transient extractor hiccups); the other taxonomy members (bad URL, deleted post,
+  dead cookies, rate limit) are stable facts and are not retried.
+- **Temp-dir cleanup guarantees**: both providers now `rmtree` their freshly created
+  `mkdtemp` dir on any failure (`except BaseException` around the resolve body — on
+  success the caller owns it, on failure nobody would). On startup
+  `main.sweep_download_dir` removes leftover `ig-*`/`tt-*` dirs from `DOWNLOAD_DIR`
+  (crash leftovers); compose now sets `DOWNLOAD_DIR=/data/tmp` so the sweep has a
+  fixed place to look (previously unset → system tmp).
+- **`/health`** (admin-only, registered before the text handler; non-admins fall
+  through to the normal link reply): reelsbot/mediagrab versions, yt-dlp/gallery-dl
+  versions via new public `mediagrab.diagnostics.tool_version()` (subprocess
+  `--version`, 10 s timeout, `None` on any failure), cookies-file status (IG
+  required, TikTok shown as "anonymous mode" when unset), cache row count (new
+  `CacheRepository.count()`), uptime from a `started_at` monotonic timestamp passed
+  through polling workflow data.
+- **Graceful shutdown**: aiogram already handles SIGINT/SIGTERM and closes the bot
+  session, but does NOT await in-flight handler tasks (checked aiogram 3.31 source:
+  `_handle_update_tasks` is never gathered). Added `ExtractionGate.busy_count()` /
+  `wait_idle(timeout)` and a `dispatcher.shutdown` hook (`main.on_shutdown`) that
+  drains in-flight jobs for up to `SHUTDOWN_GRACE` (30 s) before closing the cache;
+  shutdown runs before aiogram closes the session, so deliveries can finish. Compose
+  `stop_grace_period: 45s` gives the drain room before SIGKILL.
+- **Upgrade routine documented** (versions were already pinned via `uv.lock` +
+  `--frozen` Docker install): README gains "Operations" (health/logs/retries/
+  shutdown/temp behavior) and "Upgrading yt-dlp / gallery-dl" (lockfile bump → live
+  smoke → unit suite → commit lock → PATCH release/redeploy; triage order: upgrade
+  tools → refresh cookies on AuthExpired → only then debug wrappers). Status section
+  updated: 0–4, 6, 7 done; Phase 5 files ready but not yet VPS-verified.
+- **Tests** (206 passed / 4 skipped, ruff clean): provider temp-dir cleanup on
+  failure + kept-on-success (IG + TikTok), `diagnostics.tool_version` (ok/nonzero/
+  empty/missing), retry-once (transient retried once then success; second failure
+  not retried again; stable errors not retried), `AdminOnly`, `/health` reply
+  content incl. missing-cookies flagging, `wait_idle` (idle/drained/timeout),
+  `sweep_download_dir` (prefix-only, None, missing dir), `on_shutdown` (drains then
+  closes cache; closes cache even when grace expires).

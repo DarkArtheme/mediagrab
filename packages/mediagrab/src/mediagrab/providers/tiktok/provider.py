@@ -8,6 +8,7 @@ when different users paste different share tokens for the same post.
 from __future__ import annotations
 
 import logging
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -63,6 +64,14 @@ class TikTokProvider:
         post_id = route.uid.rpartition(":")[2]
         dest_dir = Path(tempfile.mkdtemp(prefix=f"tt-{post_id}-", dir=self._download_dir))
 
+        try:
+            return await self._resolve_in(route, dest_dir)
+        except BaseException:
+            # On success the caller owns dest_dir; on failure nobody would.
+            shutil.rmtree(dest_dir, ignore_errors=True)
+            raise
+
+    async def _resolve_in(self, route: Route, dest_dir: Path) -> MediaPost:
         if route.kind == "video":
             try:
                 return await self._resolve_video(route.canonical_url, route, dest_dir)

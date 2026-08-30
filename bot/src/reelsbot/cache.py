@@ -77,5 +77,9 @@ class CacheRepository:
         self._conn.execute("DELETE FROM posts WHERE uid = ?", (uid,))
         self._conn.commit()
 
+    def count(self) -> int:
+        (n,) = self._conn.execute("SELECT COUNT(*) FROM posts").fetchone()
+        return int(n)
+
     def close(self) -> None:
         self._conn.close()

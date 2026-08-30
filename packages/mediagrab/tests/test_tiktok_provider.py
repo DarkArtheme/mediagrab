@@ -270,3 +270,16 @@ async def test_redirect_loop_gives_up(monkeypatch):
         await _redirect.resolve_short_link(
             "https://vt.tiktok.com/token1/", is_post_url=lambda u: False
         )
+
+
+async def test_failed_extraction_removes_temp_dir(monkeypatch, tmp_path):
+    # yt-dlp chokes, the gallery-dl fallback also fails: nothing may leak.
+    install_fakes(
+        monkeypatch,
+        ytdlp=lambda cmd: ToolResult(1, "", "ERROR: something exploded"),
+        gallerydl=lambda cmd: ToolResult(1, "", "error: nope"),
+    )
+
+    with pytest.raises(ExtractionFailed):
+        await TikTokProvider(download_dir=tmp_path).resolve(VIDEO_URL)
+    assert list(tmp_path.iterdir()) == []  # no leaked tt-* dir

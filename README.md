@@ -93,6 +93,46 @@ Tips: don't log the burner account out in the browser (that invalidates the expo
 session), and keep request volume low — the bot's cache and cooldowns exist to protect
 the account.
 
+## Operations
+
+- **`/health`** (admin only): the bot replies with its package versions, the yt-dlp /
+  gallery-dl versions it resolves, cookies-file status, cache DB row count, and uptime.
+  Run it first when something looks off.
+- **Logs**: every link job logs under a `req=<id>` tag with the post `uid`, the requesting
+  user, and `extract=`/`deliver=`/`total=` timings — grep the request id to follow one job
+  end to end.
+- **Retries**: a transient extraction failure (`ExtractionFailed`) is retried once
+  automatically before the user sees an error. Stable failures (private post, dead cookies,
+  rate limit) are not retried.
+- **Shutdown**: on SIGINT/SIGTERM the bot stops polling, waits up to 30 s for in-flight
+  downloads to finish delivering, then closes the cache DB. The compose file's
+  `stop_grace_period` (45 s) is sized to let that complete.
+- **Temp files**: each post downloads into its own temp dir, removed after delivery or on
+  failure. On startup the bot also sweeps `DOWNLOAD_DIR` for `ig-*`/`tt-*` dirs a crashed
+  run may have left behind (in Docker, `DOWNLOAD_DIR=/data/tmp`).
+
+## Upgrading yt-dlp / gallery-dl
+
+Extraction breaking is a *when*, not an *if* — Instagram and TikTok change their sites, and
+the fix nearly always ships in a new extractor release. Exact versions are pinned by
+`uv.lock` (the pyprojects only set floors), so an upgrade is a lockfile change:
+
+```bash
+uv lock --upgrade-package yt-dlp --upgrade-package gallery-dl
+uv sync
+MEDIAGRAB_LIVE_TEST=1 IG_COOKIES_FILE=~/ig-cookies.txt \
+    uv run pytest packages/mediagrab/tests/test_live_smoke.py -v   # verify against real sites
+uv run pytest                                                      # unit suite still green
+```
+
+Commit the updated `uv.lock`, then redeploy (`docker compose up -d --build` — the image
+installs from the lockfile with `--frozen`). Cutting a PATCH release of the bot for this is
+the intended flow (see “Releases & versioning”).
+
+When extraction breaks in production, try in this order: **1)** upgrade the tools as above;
+**2)** if `/health` or the admin notification says `AuthExpired`, refresh the IG cookies
+(section above); **3)** only then debug the wrappers themselves.
+
 ### Live smoke test
 
 CI never touches Instagram or TikTok. To verify extraction against the real sites:
@@ -104,6 +144,7 @@ MEDIAGRAB_LIVE_TEST=1 IG_COOKIES_FILE=~/ig-cookies.txt \
 
 ## Status
 
-Phases 0–4 and 7 done (scaffolding, library core, Instagram provider, bot MVP, cache +
-politeness, TikTok provider). See `plan.md` for the implementation roadmap and
+Phases 0–4, 6, and 7 done (scaffolding, library core, Instagram provider, bot MVP, cache +
+politeness, hardening, TikTok provider). Phase 5 (Docker + VPS deploy) has its files ready
+but is not yet live-verified on the VPS. See `plan.md` for the implementation roadmap and
 `worklog.md` for the project history.
