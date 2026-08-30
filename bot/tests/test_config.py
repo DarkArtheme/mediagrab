@@ -12,6 +12,7 @@ FULL_ENV = {
     "ADMIN_USER_ID": "111",
     "TELEGRAM_API_URL": "http://telegram-bot-api:8081",
     "IG_COOKIES_FILE": "/data/cookies/instagram.txt",
+    "TIKTOK_COOKIES_FILE": "/data/cookies/tiktok.txt",
     "DB_PATH": "/data/db/cache.sqlite3",
     "DOWNLOAD_DIR": "/data/tmp",
 }
@@ -24,6 +25,7 @@ def test_full_env() -> None:
     assert config.admin_user_id == 111
     assert config.api_url == "http://telegram-bot-api:8081"
     assert config.ig_cookies_file == Path("/data/cookies/instagram.txt")
+    assert config.tiktok_cookies_file == Path("/data/cookies/tiktok.txt")
     assert config.db_path == Path("/data/db/cache.sqlite3")
     assert config.download_dir == Path("/data/tmp")
 
@@ -34,6 +36,7 @@ def test_minimal_env_defaults() -> None:
     )
     assert config.api_url is None
     assert config.ig_cookies_file is None
+    assert config.tiktok_cookies_file is None
     assert config.db_path == Path("cache.sqlite3")
     assert config.download_dir is None
 

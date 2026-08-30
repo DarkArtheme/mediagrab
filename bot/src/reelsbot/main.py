@@ -10,7 +10,7 @@ from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.client.telegram import TelegramAPIServer
 from dotenv import load_dotenv
 
-from mediagrab import InstagramProvider
+from mediagrab import InstagramProvider, TikTokProvider
 from mediagrab import Router as MediaRouter
 from reelsbot import handlers
 from reelsbot.cache import CacheRepository
@@ -26,6 +26,13 @@ def build_media_router(config: Config) -> MediaRouter:
         "instagram",
         InstagramProvider(
             cookies_file=config.ig_cookies_file,
+            download_dir=config.download_dir,
+        ),
+    )
+    media_router.register(
+        "tiktok",
+        TikTokProvider(
+            cookies_file=config.tiktok_cookies_file,
             download_dir=config.download_dir,
         ),
     )

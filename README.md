@@ -1,14 +1,18 @@
 # reels-downloader
 
-A Telegram bot: paste an Instagram link, get back the media and the description.
+A Telegram bot: paste an Instagram or TikTok link, get back the media and the description.
 
-- Reel link → video + caption.
-- Post link (`/p/`) → photo(s) as an album (mixed photo+video carousels supported) + caption.
+- Instagram reel link → video + caption.
+- Instagram post link (`/p/`) → photo(s) as an album (mixed photo+video carousels
+  supported) + caption.
+- TikTok link → video or photo slideshow + caption. Short share links
+  (`vt.tiktok.com/…`, `vm.tiktok.com/…`) work too. No account or cookies needed —
+  TikTok extraction is anonymous.
 
 Monorepo with two Python packages:
 
 - **`packages/mediagrab`** — a standalone library that turns a social-media URL into downloaded
-  media plus its text description (Instagram now, TikTok planned).
+  media plus its text description (Instagram and TikTok providers).
 - **`bot/`** — the Telegram bot (`reelsbot`, aiogram 3.x) built on `mediagrab`.
 
 ## Development
@@ -56,7 +60,7 @@ the account.
 
 ### Live smoke test
 
-CI never touches Instagram. To verify extraction against the real site:
+CI never touches Instagram or TikTok. To verify extraction against the real sites:
 
 ```bash
 MEDIAGRAB_LIVE_TEST=1 IG_COOKIES_FILE=~/ig-cookies.txt \
@@ -65,6 +69,6 @@ MEDIAGRAB_LIVE_TEST=1 IG_COOKIES_FILE=~/ig-cookies.txt \
 
 ## Status
 
-Phases 0–4 done (scaffolding, library core, Instagram provider, bot MVP, cache +
-politeness). See `plan.md` for the implementation roadmap and `worklog.md` for the
-project history.
+Phases 0–4 and 7 done (scaffolding, library core, Instagram provider, bot MVP, cache +
+politeness, TikTok provider). See `plan.md` for the implementation roadmap and
+`worklog.md` for the project history.

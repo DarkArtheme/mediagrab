@@ -124,13 +124,75 @@ def test_valid_urls(url: str, uid: str, kind: str, canonical: str) -> None:
 
 
 @pytest.mark.parametrize(
+    ("url", "uid", "kind", "canonical"),
+    [
+        # The two example links from the brief resolve to these long forms.
+        (
+            "https://www.tiktok.com/@kyotheorangecatt/video/7677354019064515870?_r=1&_t=ZS-9",
+            "tiktok:7677354019064515870",
+            "video",
+            "https://www.tiktok.com/@kyotheorangecatt/video/7677354019064515870",
+        ),
+        (
+            "https://www.tiktok.com/@rastograf_vlog/photo/7677528044197776670",
+            "tiktok:7677528044197776670",
+            "photo",
+            "https://www.tiktok.com/@rastograf_vlog/photo/7677528044197776670",
+        ),
+        # Host variants, trailing slash, scheme-less paste.
+        (
+            "https://tiktok.com/@some.user_1/video/123/",
+            "tiktok:123",
+            "video",
+            "https://www.tiktok.com/@some.user_1/video/123",
+        ),
+        (
+            "tiktok.com/@user/video/123",
+            "tiktok:123",
+            "video",
+            "https://www.tiktok.com/@user/video/123",
+        ),
+        # Share links: post id and kind hide behind a redirect.
+        (
+            "https://vt.tiktok.com/ZSVvX7VkE/",
+            "tiktok:ZSVvX7VkE",
+            "unknown",
+            "https://vt.tiktok.com/ZSVvX7VkE/",
+        ),
+        (
+            "https://vm.tiktok.com/ZMabcDEF1",
+            "tiktok:ZMabcDEF1",
+            "unknown",
+            "https://vm.tiktok.com/ZMabcDEF1/",
+        ),
+        (
+            "https://www.tiktok.com/t/ZTabcDEF1/",
+            "tiktok:ZTabcDEF1",
+            "unknown",
+            "https://www.tiktok.com/t/ZTabcDEF1/",
+        ),
+    ],
+)
+def test_valid_tiktok_urls(url: str, uid: str, kind: str, canonical: str) -> None:
+    route = parse_url(url)
+    assert route == Route(provider="tiktok", uid=uid, kind=kind, canonical_url=canonical)
+
+
+@pytest.mark.parametrize(
     "url",
     [
         "",
         "   ",
         "not a url",
         "https://www.youtube.com/watch?v=abc",
-        "https://www.tiktok.com/@user/video/123",  # future provider, unsupported today
+        # TikTok pages that aren't posts.
+        "https://www.tiktok.com/",
+        "https://www.tiktok.com/@some_user",
+        "https://www.tiktok.com/@user/live",
+        "https://www.tiktok.com/@user/video/notanid",
+        "https://www.tiktok.com/ZSVvX7VkE/",  # bare token only valid on short hosts
+        "https://vt.tiktok.com/",
+        "https://vt.tiktok.com/bad token/",
         "https://www.instagram.com/",
         "https://www.instagram.com/some_user/",
         "https://www.instagram.com/stories/some_user/123456/",

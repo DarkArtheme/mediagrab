@@ -15,7 +15,7 @@ from urllib.parse import urlsplit
 from mediagrab.errors import UnsupportedUrl
 from mediagrab.providers.base import Provider
 
-PostKind = Literal["reel", "post"]
+PostKind = Literal["reel", "post", "video", "photo", "unknown"]
 
 _INSTAGRAM_HOSTS = {"instagram.com", "www.instagram.com", "m.instagram.com"}
 
@@ -31,6 +31,19 @@ _RESERVED_PREFIXES = {"share"}
 
 _SEGMENT_KIND: dict[str, PostKind] = {"reel": "reel", "reels": "reel", "tv": "reel", "p": "post"}
 _CANONICAL_SEGMENT = {"reel": "reel", "reels": "reel", "tv": "tv", "p": "p"}
+
+_TIKTOK_HOSTS = {"tiktok.com", "www.tiktok.com"}
+# Share-button links; the post id and video/photo kind hide behind a redirect,
+# so these route with kind="unknown" and the provider resolves them at fetch time.
+_TIKTOK_SHORT_HOSTS = {"vm.tiktok.com", "vt.tiktok.com"}
+
+_TIKTOK_PATH = re.compile(r"^/@(?P<user>[A-Za-z0-9._-]+)/(?P<segment>video|photo)/(?P<id>\d+)/?$")
+_TIKTOK_T_PATH = re.compile(r"^/t/(?P<token>[A-Za-z0-9]+)/?$")
+_TIKTOK_SHORT_PATH = re.compile(r"^/(?P<token>[A-Za-z0-9]+)/?$")
+
+# TikTok uids are namespaced so they can never collide with Instagram
+# shortcodes in the shared cache table.
+_TIKTOK_UID_PREFIX = "tiktok:"
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,6 +80,36 @@ def parse_url(url: str) -> Route:
                 uid=code,
                 kind=_SEGMENT_KIND[segment],
                 canonical_url=canonical,
+            )
+
+    if host in _TIKTOK_HOSTS:
+        match = _TIKTOK_PATH.match(parts.path)
+        if match:
+            segment = match["segment"]
+            kind: PostKind = "video" if segment == "video" else "photo"
+            return Route(
+                provider="tiktok",
+                uid=f"{_TIKTOK_UID_PREFIX}{match['id']}",
+                kind=kind,
+                canonical_url=f"https://www.tiktok.com/@{match['user']}/{segment}/{match['id']}",
+            )
+        match = _TIKTOK_T_PATH.match(parts.path)
+        if match:
+            return Route(
+                provider="tiktok",
+                uid=f"{_TIKTOK_UID_PREFIX}{match['token']}",
+                kind="unknown",
+                canonical_url=f"https://www.tiktok.com/t/{match['token']}/",
+            )
+
+    if host in _TIKTOK_SHORT_HOSTS:
+        match = _TIKTOK_SHORT_PATH.match(parts.path)
+        if match:
+            return Route(
+                provider="tiktok",
+                uid=f"{_TIKTOK_UID_PREFIX}{match['token']}",
+                kind="unknown",
+                canonical_url=f"https://{host}/{match['token']}/",
             )
 
     raise UnsupportedUrl(url)

@@ -27,6 +27,7 @@ CONFIG = Config(
     admin_user_id=999,
     api_url=None,
     ig_cookies_file=None,
+    tiktok_cookies_file=None,
     db_path=Path("cache.sqlite3"),
     download_dir=None,
 )
@@ -158,6 +159,40 @@ class TestHandleLink:
         assert stored.caption == "cap"
         # user slot released: the next job is accepted
         assert gate.acquire_user(111) is True
+
+    async def test_short_link_caches_both_token_and_post_id(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        cache: CacheRepository,
+        gate: ExtractionGate,
+    ) -> None:
+        # A TikTok share link routes under its token; the provider resolves the
+        # real post id. Both keys must land in the cache.
+        short_url = "https://vt.tiktok.com/ZSVvX7VkE/"
+        dest = tmp_path / "tt-123-x"
+        dest.mkdir()
+        video = dest / "v.mp4"
+        video.touch()
+        post = MediaPost(
+            items=[MediaItem(kind="video", path=video)],
+            caption="cap",
+            author="a",
+            source_url="https://www.tiktok.com/@user/video/123",
+            uid="tiktok:123",
+        )
+        provider = FakeProvider(post=post)
+        media_router = MediaRouter()
+        media_router.register("tiktok", provider)
+        monkeypatch.setattr(handlers.delivery, "send_post", AsyncMock(return_value=[SENT_VIDEO]))
+        message, bot = make_message(text=short_url), AsyncMock()
+
+        await handlers.handle_link(message, bot, CONFIG, media_router, cache, gate)
+
+        for uid in ("tiktok:ZSVvX7VkE", "tiktok:123"):
+            stored = cache.get(uid)
+            assert stored is not None, uid
+            assert stored.items == [CachedItem(kind="video", file_id="vid-1")]
 
     async def test_cache_hit_skips_provider(
         self, monkeypatch: pytest.MonkeyPatch, cache: CacheRepository, gate: ExtractionGate

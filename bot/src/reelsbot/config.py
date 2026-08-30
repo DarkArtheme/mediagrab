@@ -19,6 +19,7 @@ class Config:
     admin_user_id: int
     api_url: str | None
     ig_cookies_file: Path | None
+    tiktok_cookies_file: Path | None
     db_path: Path
     download_dir: Path | None
 
@@ -47,6 +48,8 @@ class Config:
 
         api_url = env.get("TELEGRAM_API_URL", "").strip() or None
         cookies = env.get("IG_COOKIES_FILE", "").strip()
+        # TikTok works anonymously; this stays unset unless that stops being true.
+        tiktok_cookies = env.get("TIKTOK_COOKIES_FILE", "").strip()
         download_dir = env.get("DOWNLOAD_DIR", "").strip()
 
         return cls(
@@ -55,6 +58,7 @@ class Config:
             admin_user_id=admin_user_id,
             api_url=api_url,
             ig_cookies_file=Path(cookies) if cookies else None,
+            tiktok_cookies_file=Path(tiktok_cookies) if tiktok_cookies else None,
             db_path=Path(env.get("DB_PATH", "").strip() or "cache.sqlite3"),
             download_dir=Path(download_dir) if download_dir else None,
         )

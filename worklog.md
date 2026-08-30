@@ -304,3 +304,47 @@ All project actions are recorded here, newest entry last.
   behind the env flag.
 - Waiting on the user for sample public TikTok links (video, slideshow,
   short link) to capture fixtures and run live smoke tests.
+
+## 2026-08-30 — Phase 7: TikTok provider (videos + photo slideshows)
+
+- User provided sample short links; both resolve anonymously with one GET:
+  `vt.tiktok.com/ZSVvXyT7M` → photo slideshow, `vt.tiktok.com/ZSVvX7VkE` → video.
+- **Router** (`mediagrab/router.py`): `PostKind` widened with
+  `video`/`photo`/`unknown`; TikTok long URLs (`/@user/video|photo/<id>`),
+  `tiktok.com/t/<token>` and `vm./vt.tiktok.com/<token>` short links parse to
+  provider `tiktok` with uids namespaced `tiktok:<id|token>` (no cache
+  collisions with IG shortcodes).
+- **Provider** (`mediagrab/providers/tiktok/`), mirrors the Instagram layout:
+  - `_redirect.py`: resolves short links by reading `Location` headers hop by
+    hop (stdlib urllib, no-redirect opener, browser UA, ≤5 hops, via
+    `asyncio.to_thread`); dead links → `PostUnavailable`.
+  - `ytdlp.py`: video extraction; format selector
+    `b[vcodec^=h264]/bv*[vcodec^=h264]+ba/b` because yt-dlp's default TikTok
+    pick is bytevc1/H.265 (Telegram black-screen risk); verified live it picks
+    the clean H.264 720p non-watermarked format (the watermarked "download"
+    format carries preference=-2 and loses).
+  - `gallerydl.py`: slideshow photos; drops the mp3 music track gallery-dl
+    always saves (user chose photos-only); orders by sidecar `num`; caption
+    from `desc`, author from `user`.
+  - `provider.py`: short-link resolution first (so `MediaPost.uid` is always
+    the numeric post id), then mutual fallback: video → yt-dlp, on
+    ExtractionFailed retry gallery-dl; photo → gallery-dl, on failure/empty
+    retry yt-dlp with `/photo/` rewritten to `/video/` (yt-dlp's TikTok
+    extractor only matches `/video/`; verified `/photo/` gives "Unsupported
+    URL").
+  - `_classify.py`: TikTok is anonymous by default, so login-wall stderr maps
+    to `PostUnavailable` unless a cookies file is configured (then
+    `AuthExpired`, as for IG).
+- **Bot**: `TIKTOK_COOKIES_FILE` optional env (unset by default) in config +
+  `.env.example`; provider registered in `main.py`; user-facing copy now
+  mentions both platforms; `AuthExpired` admin alert is provider-aware; on a
+  short link the handler caches under both the token uid and the resolved
+  post-id uid so the long URL hits the cache later.
+- **Tests**: 17 new tiktok-provider tests (mocked subprocess + faked redirect
+  hops, fixtures trimmed from real captures), TikTok router cases, a handler
+  test for the dual cache write, config passthrough, and 2 live smoke tests
+  using the sample short links. Live smoke run passed against real TikTok
+  (video + slideshow, 7.8s). 176 passed / 2 skipped locally; ruff clean.
+- Note: yt-dlp warns "extractor is attempting impersonation, but no
+  impersonate target is available" — extraction works anyway; if TikTok ever
+  starts hard-requiring it, installing `curl-cffi` in the image is the fix.

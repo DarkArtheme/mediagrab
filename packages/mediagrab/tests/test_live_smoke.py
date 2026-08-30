@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from mediagrab.providers.instagram.provider import InstagramProvider
+from mediagrab.providers.tiktok.provider import TikTokProvider
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get("MEDIAGRAB_LIVE_TEST"),
@@ -43,4 +44,33 @@ async def test_live_post(tmp_path: Path) -> None:
     assert post.uid == "DWTPjRXE5WS"
     assert post.items
     for item in post.items:
+        assert item.path.exists() and item.path.stat().st_size > 0
+
+
+# TikTok works anonymously — no cookies env needed. Both are short share
+# links on purpose: they exercise redirect resolution too.
+EXAMPLE_TIKTOK_VIDEO = "https://vt.tiktok.com/ZSVvX7VkE/"
+EXAMPLE_TIKTOK_PHOTO = "https://vt.tiktok.com/ZSVvXyT7M/"
+
+
+def _tiktok_provider(tmp_path: Path) -> TikTokProvider:
+    return TikTokProvider(download_dir=tmp_path)
+
+
+async def test_live_tiktok_video(tmp_path: Path) -> None:
+    post = await _tiktok_provider(tmp_path).resolve(EXAMPLE_TIKTOK_VIDEO)
+    assert post.uid == "tiktok:7677354019064515870"
+    assert post.caption
+    [item] = post.items
+    assert item.kind == "video"
+    assert item.path.exists() and item.path.stat().st_size > 0
+
+
+async def test_live_tiktok_photo_slideshow(tmp_path: Path) -> None:
+    post = await _tiktok_provider(tmp_path).resolve(EXAMPLE_TIKTOK_PHOTO)
+    assert post.uid == "tiktok:7677528044197776670"
+    assert post.caption
+    assert post.items
+    for item in post.items:
+        assert item.kind == "photo"
         assert item.path.exists() and item.path.stat().st_size > 0
