@@ -257,3 +257,24 @@ All project actions are recorded here, newest entry last.
 - Tests updated: provider assertions compare `Path(cmd[0]).name`; delivery asserts
   `request_timeout > 60` on video sends. 141 passed / 2 skipped, ruff clean.
 - Bot restarted with the fixes; awaiting live re-test (reel, post, reel-again).
+
+## 2026-08-30 — Fix black-screen video: force H.264 format selection in yt-dlp
+
+- User report: reel `DZu6cdBI2-A` played audio over a black screen (macOS client) /
+  a static frame (iOS); scrubbing previews rendered fine. Diagnosis via
+  `yt-dlp -F`: with no `--format`, yt-dlp's default (`bv*+ba/b`) merged the best
+  DASH video — **VP9** (`vp09.00.40.08`, 1080x1920) — with m4a audio. Telegram
+  clients only decode H.264 inline, so the video track showed black; previews
+  come from server-side thumbnails, hence they worked. The progressive
+  `…v-0/1/2` formats (vcodec "unknown" in yt-dlp's listing) probed as
+  H.264 High + AAC 720x1280 — exactly what Telegram wants.
+- Fix in `mediagrab/providers/instagram/ytdlp.py`: added
+  `--format "bv*[vcodec^=avc]+ba/b[vcodec!^=?vp][vcodec!^=?av01]/bv*+ba/b"`
+  (explicit H.264 first; then any non-VP9/AV1 combined format, with `?` so
+  unknown-codec progressive mp4s pass; last-resort anything so exotic posts
+  still download) plus `--merge-output-format mp4` so a merged avc+m4a pair
+  can never land in mkv. Verified with `--simulate`: selector now picks the
+  progressive H.264 720p format for the reported reel.
+- Purged the stale cache row for uid `DZu6cdBI2-A` from `cache.sqlite3` (the
+  broken video's `file_id` was cached and would have been re-served).
+- 143 passed / 2 skipped, ruff clean.

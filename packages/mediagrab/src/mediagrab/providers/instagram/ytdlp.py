@@ -15,6 +15,13 @@ from mediagrab.providers.instagram._classify import classify_failure
 
 _SKIP_SUFFIXES = {".part", ".json", ".ytdl"}
 
+# Telegram clients only decode H.264 inline; Instagram's "best" is often VP9/AV1,
+# which plays audio over a black screen. Prefer explicit H.264, then any format
+# that is not VP9/AV1 (Instagram's progressive H.264 mp4s report an unknown codec,
+# hence the `?` operators that let unknown values pass), then anything at all so
+# an exotic post still downloads instead of erroring out.
+_FORMAT_SELECTOR = "bv*[vcodec^=avc]+ba/b[vcodec!^=?vp][vcodec!^=?av01]/bv*+ba/b"
+
 
 async def extract_video(
     url: str, *, dest_dir: Path, cookies_file: Path | None, timeout: float
@@ -26,6 +33,10 @@ async def extract_video(
         "--no-progress",
         "--dump-json",
         "--no-simulate",
+        "--format",
+        _FORMAT_SELECTOR,
+        "--merge-output-format",
+        "mp4",
         "--output",
         str(dest_dir / "%(id)s.%(ext)s"),
     ]
