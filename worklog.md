@@ -278,3 +278,11 @@ All project actions are recorded here, newest entry last.
 - Purged the stale cache row for uid `DZu6cdBI2-A` from `cache.sqlite3` (the
   broken video's `file_id` was cached and would have been re-served).
 - 143 passed / 2 skipped, ruff clean.
+
+## 2026-08-30 — Add local run script
+
+- Added `scripts/run_bot.sh`: cd's to the repo root, fails fast if `.env` is
+  missing, warns if the `IG_COOKIES_FILE` path from `.env` doesn't exist, runs
+  `uv sync --quiet`, then `exec uv run python -m reelsbot` (the bot loads `.env`
+  itself via `load_dotenv()`). Smoke-tested: bot starts polling and shuts down
+  cleanly on SIGTERM.
