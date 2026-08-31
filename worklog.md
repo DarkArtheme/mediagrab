@@ -497,3 +497,25 @@ Bot API Server as an opt-in.
 - Phase 5 "done when" (compose up on the VPS serving the whitelist) still
   pending — but no longer blocked on Telegram: cloud mode needs no api_id/hash.
   The >50 MB upload check only applies to the local-api variant.
+
+## 2026-08-31 — CI/CD: continuous Docker image build + push to GHCR
+
+- **ci.yml, new `image` job** (needs: checks): buildx build of
+  `docker/Dockerfile` with GHA layer cache; on master push → login to GHCR and
+  push `ghcr.io/darkartheme/reelsbot:edge` + immutable `sha-<short>`
+  (docker/metadata-action lowercases the owner); on PR → build only, no push
+  (Dockerfile validation). `VERSION` build-arg set to `edge-<sha>`. Versioned
+  tags (X.Y.Z / X.Y / latest) remain the Release workflow's job on `bot-v*`.
+- **Dockerfile**: `org.opencontainers.image.source` label fixed from the stale
+  `DarkArtheme/reels-downloader` to the actual repo `DarkArtheme/mediagrab` —
+  GHCR links the package to its repo through this label.
+- **Registry deploys**: compose bot image is now
+  `${BOT_IMAGE:-reelsbot}:${BOT_VERSION:-dev}`; `.env.example` documents
+  BOT_IMAGE (empty → local source build, `ghcr.io/darkartheme/reelsbot` →
+  pull CI-built image, then `docker compose pull bot && up -d --no-build`).
+- **README**: "Releases & versioning" documents the continuous edge/sha tags;
+  new "Deploying from the registry" subsection under the VPS deploy docs incl.
+  the private-package note (ghcr login with read:packages PAT, or make the
+  package public).
+- Verified: `docker compose config` resolves the image both with defaults and
+  with BOT_IMAGE/BOT_VERSION set; workflow YAML passes yamllint.

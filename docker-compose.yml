@@ -27,7 +27,10 @@ services:
       dockerfile: docker/Dockerfile
       args:
         VERSION: ${BOT_VERSION:-dev}
-    image: reelsbot:${BOT_VERSION:-dev}
+    # Local build by default; set BOT_IMAGE=ghcr.io/darkartheme/reelsbot and
+    # BOT_VERSION=<tag> in .env to run a CI-built image instead
+    # (then `docker compose pull bot && docker compose up -d --no-build`).
+    image: ${BOT_IMAGE:-reelsbot}:${BOT_VERSION:-dev}
     env_file: .env
     environment:
       # TELEGRAM_API_URL intentionally comes from .env: empty → cloud

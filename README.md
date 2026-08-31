@@ -60,9 +60,14 @@ git push origin master --follow-tags
 The script bumps the version, runs lint + tests, commits, and creates the tag
 (`mediagrab-vX.Y.Z` / `bot-vX.Y.Z`). On push, CI verifies the tag matches the package version,
 then: library tags get a wheel/sdist attached to a GitHub Release; bot tags get the Docker
-image built and pushed to `ghcr.io/<owner>/reelsbot` as `X.Y.Z`, `X.Y`, and `latest`
+image built and pushed to `ghcr.io/darkartheme/reelsbot` as `X.Y.Z`, `X.Y`, and `latest`
 (the version is also stamped into the image's `org.opencontainers.image.version` label).
-Local compose builds tag the image `reelsbot:${BOT_VERSION:-dev}`.
+
+The image is also built continuously: every push to `master` publishes
+`ghcr.io/darkartheme/reelsbot:edge` plus an immutable `sha-<short>` tag, and every PR
+builds the image without pushing (Dockerfile validation). Use `edge` to track master,
+`X.Y.Z`/`latest` for releases. Local compose builds tag the image
+`reelsbot:${BOT_VERSION:-dev}`.
 
 ### Running the bot locally
 
@@ -141,6 +146,27 @@ and re-downloads — no manual cache surgery needed.
 
 To update a running deployment: `git pull && docker compose up -d --build` (add
 `--profile local-api` in 2 GB mode).
+
+### Deploying from the registry (no build on the VPS)
+
+CI publishes the image to GHCR on every master push and release (see "Releases &
+versioning"), so the VPS can pull instead of building. In `.env` set:
+
+```bash
+BOT_IMAGE=ghcr.io/darkartheme/reelsbot
+BOT_VERSION=latest        # or X.Y.Z, or edge / sha-<short> for master builds
+```
+
+then:
+
+```bash
+docker compose pull bot
+docker compose up -d --no-build
+```
+
+If the GHCR package is private (the default on first push), the VPS needs
+`docker login ghcr.io` with a GitHub personal access token that has `read:packages`;
+alternatively make the package public in its GitHub settings and skip the login.
 
 ## Operations
 

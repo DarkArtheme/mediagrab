@@ -28,6 +28,6 @@ ARG VERSION=dev
 LABEL org.opencontainers.image.title="reelsbot" \
       org.opencontainers.image.description="Telegram bot that replies to Instagram/TikTok links with the media and caption" \
       org.opencontainers.image.version="${VERSION}" \
-      org.opencontainers.image.source="https://github.com/DarkArtheme/reels-downloader"
+      org.opencontainers.image.source="https://github.com/DarkArtheme/mediagrab"
 
 CMD ["python", "-m", "reelsbot"]
