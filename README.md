@@ -80,7 +80,11 @@ image without pushing (Dockerfile validation). Use `edge` to track master,
 3. Leave `TELEGRAM_API_URL` empty to use the standard `api.telegram.org` (50 MB upload
    limit; the optional 2 GB Local Bot API Server is a Docker compose profile — see
    "Deploying to a VPS").
-4. Point `IG_COOKIES_FILE` at the burner account's cookies file (see below).
+4. Point `IG_COOKIES_FILE` at the burner account's cookies file (see below). Note:
+   the `/data/...` values `.env.example` ships for `IG_COOKIES_FILE`, `DB_PATH` and
+   `DOWNLOAD_DIR` are in-container paths for the Docker deployment — for a local run
+   replace them with local paths (or leave `DB_PATH`/`DOWNLOAD_DIR` empty for the
+   defaults: `./cache.sqlite3` and the system temp dir).
 5. `uv run python -m reelsbot`, then message the bot an Instagram link.
 
 ## Instagram cookies
@@ -92,8 +96,9 @@ logged-in account. Use a **dedicated burner account**, never a personal one.
    profile you keep logged in).
 2. Install a cookies exporter extension (e.g. "Get cookies.txt LOCALLY") and export
    cookies for `instagram.com` in **Netscape format**.
-3. Save the file and point `IG_COOKIES_FILE` in `.env` at it. In Docker it is mounted as
-   a read-only volume.
+3. Save the file and point `IG_COOKIES_FILE` in `.env` at it. In Docker, name it
+   `instagram.txt` in the repo root instead — compose mounts it read-only (see
+   "Deploying to a VPS").
 4. When the bot reports `AuthExpired` (the admin gets a notification), repeat steps 1–3:
    log in again in the browser and re-export. Takes ~5 minutes.
 
@@ -114,10 +119,12 @@ the bot image is built from source on the VPS (`reelsbot:${BOT_VERSION:-dev}`, s
    git clone <repo-url> && cd reels-downloader
    cp .env.example .env
    # fill in: BOT_TOKEN, WHITELIST_USER_IDS, ADMIN_USER_ID
+   # keep the pre-filled /data/... paths — the container reads them via env_file
    ```
 
-2. Put the burner account's `cookies.txt` (Netscape format, see "Instagram cookies")
-   in the repo root — compose mounts `./cookies.txt` read-only into the container.
+2. Put the burner account's cookies file (Netscape format, see "Instagram cookies")
+   in the repo root as `instagram.txt` — compose mounts `./instagram.txt` read-only
+   into the container at `/data/cookies/instagram.txt`.
 
 3. Start the stack — two modes:
 
@@ -186,7 +193,8 @@ alternatively make the package public in its GitHub settings and skip the login.
   `stop_grace_period` (45 s) is sized to let that complete.
 - **Temp files**: each post downloads into its own temp dir, removed after delivery or on
   failure. On startup the bot also sweeps `DOWNLOAD_DIR` for `ig-*`/`tt-*` dirs a crashed
-  run may have left behind (in Docker, `DOWNLOAD_DIR=/data/tmp`).
+  run may have left behind (in Docker, `DOWNLOAD_DIR=/data/tmp` lives on the `video-cache`
+  named volume, so leftovers survive a container restart and the sweep cleans them up).
 
 ## Upgrading yt-dlp / gallery-dl
 

@@ -530,3 +530,22 @@ VERSION build-arg/OCI label, replacing `edge-<full-sha>`). Release tags
 they never collide with released versions. README + .env.example tag-scheme
 mentions updated. The one already-published `sha-efa9ecd` tag stays in GHCR
 (harmless; can be deleted from the package page).
+
+## 2026-08-31 — Docs sync after compose simplification (user's 56b3a77)
+
+User's compose changes: bot service `environment:` block dropped in favor of
+`env_file: .env` alone (so `.env` now carries the in-container paths —
+`.env.example` pre-fills IG_COOKIES_FILE/DB_PATH and now DOWNLOAD_DIR=/data/tmp);
+host cookies file renamed `cookies.txt` → `instagram.txt`; new `video-cache`
+named volume mounted at /data/tmp.
+
+Docs updated to match:
+- **README**: VPS step 2 and "Instagram cookies" step 3 now say the repo-root
+  file is `instagram.txt`; VPS step 1 notes the pre-filled /data paths must stay
+  (env_file is the only env source now); local-run step 4 warns the /data/...
+  example values are container paths (replace or clear for local runs; defaults
+  are ./cache.sqlite3 + system temp); temp-files bullet mentions leftovers
+  persist on the `video-cache` volume and get swept on startup.
+- **.gitignore**: added `instagram.txt` and `tiktok.txt` — the renamed cookies
+  file was not covered by the old `cookies.txt` entry (secret-leak risk).
+- **CLAUDE.md**: secrets line updated to "cookie files like instagram.txt".

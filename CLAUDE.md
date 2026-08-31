@@ -7,7 +7,7 @@ files created/changed, phases completed) as an entry in `worklog.md` at the repo
 
 Commit after any changes: whenever you change files in this repo (code, docs, worklog),
 finish the task by committing the result to `master`. Never commit secrets (`.env`,
-`cookies.txt`, databases — all git-ignored).
+cookie files like `instagram.txt`, databases — all git-ignored).
 
 ## What this project is
 
