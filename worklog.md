@@ -519,3 +519,14 @@ Bot API Server as an opt-in.
   package public).
 - Verified: `docker compose config` resolves the image both with defaults and
   with BOT_IMAGE/BOT_VERSION set; workflow YAML passes yamllint.
+
+## 2026-08-31 — CI image tags: semver dev tag instead of sha-<short>
+
+Master image builds now publish `ghcr.io/darkartheme/reelsbot:edge` +
+`X.Y.Z-dev.<short-sha>` (new "Compute dev version" step reads
+bot/pyproject.toml; metadata-action `type=raw`; same value goes into the
+VERSION build-arg/OCI label, replacing `edge-<full-sha>`). Release tags
+(X.Y.Z / X.Y / latest on bot-v*) unchanged — dev tags are prerelease-style so
+they never collide with released versions. README + .env.example tag-scheme
+mentions updated. The one already-published `sha-efa9ecd` tag stays in GHCR
+(harmless; can be deleted from the package page).

@@ -64,8 +64,10 @@ image built and pushed to `ghcr.io/darkartheme/reelsbot` as `X.Y.Z`, `X.Y`, and 
 (the version is also stamped into the image's `org.opencontainers.image.version` label).
 
 The image is also built continuously: every push to `master` publishes
-`ghcr.io/darkartheme/reelsbot:edge` plus an immutable `sha-<short>` tag, and every PR
-builds the image without pushing (Dockerfile validation). Use `edge` to track master,
+`ghcr.io/darkartheme/reelsbot:edge` plus an immutable semver dev tag
+`X.Y.Z-dev.<short-sha>` (`X.Y.Z` = the current version in `bot/pyproject.toml`, so a
+dev build reads as "on the way to X.Y.Z, at this commit"), and every PR builds the
+image without pushing (Dockerfile validation). Use `edge` to track master,
 `X.Y.Z`/`latest` for releases. Local compose builds tag the image
 `reelsbot:${BOT_VERSION:-dev}`.
 
@@ -154,7 +156,7 @@ versioning"), so the VPS can pull instead of building. In `.env` set:
 
 ```bash
 BOT_IMAGE=ghcr.io/darkartheme/reelsbot
-BOT_VERSION=latest        # or X.Y.Z, or edge / sha-<short> for master builds
+BOT_VERSION=latest        # or X.Y.Z, or edge / X.Y.Z-dev.<sha> for master builds
 ```
 
 then:
