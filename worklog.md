@@ -591,3 +591,16 @@ Fix — post-download normalization in mediagrab:
 Operational note: the broken post is NOT in the local cache but may be cached
 on the deployment (`/data/db/cache.sqlite3`) with dead-on-arrival file_ids —
 after deploying, purge it: `DELETE FROM posts WHERE uid='DbbEZOIjTF2';`.
+
+## 2026-08-31 — Fix: release tags never reached GitHub
+
+`./scripts/release.sh bot 0.1.1` tagged `bot-v0.1.1` locally, but no image
+appeared on GHCR: the script creates a *lightweight* tag while its suggested
+push command (`git push origin master --follow-tags`) only pushes *annotated*
+tags — so the tag stayed local and the tag-triggered Release workflow never
+fired. The remote had zero tags.
+
+- Pushed `bot-v0.1.1` manually (`git push origin bot-v0.1.1`) — Release
+  workflow run started, builds/pushes ghcr.io/darkartheme/reelsbot:0.1.1.
+- `scripts/release.sh`: `git tag` → `git tag -a -m "Release <component> v<ver>"`
+  so `--follow-tags` picks the tag up on future releases.

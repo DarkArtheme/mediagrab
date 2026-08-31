@@ -50,7 +50,7 @@ uv run pytest --quiet
 
 git add "$pyproject" uv.lock
 git commit --quiet -m "Release $component v$version"
-git tag "$tag"
+git tag -a "$tag" -m "Release $component v$version"
 
 echo "Tagged $tag. Push the release with:"
 echo "  git push origin master --follow-tags"
