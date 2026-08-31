@@ -560,3 +560,34 @@ DB_PATH/DOWNLOAD_DIR → local defaults), git-ignored `.env.local`, README
 local-run step 4 rewritten around the new file. Docker is unaffected — compose
 reads `.env` via env_file and the container has no `.env.local`. Lint + full
 test suite green.
+
+## 2026-08-31 — Fix: carousel videos unplayable in Telegram (VP9 → H.264 transcode)
+
+Bug (user report): for the post `instagram.com/p/DbbEZOIjTF2/` photos worked,
+but the two carousel videos rendered in Telegram without playing. Reproduced
+with the CLI: gallery-dl's `video_url` for those items was a video-only VP9
+mp4 (no audio track), and `yt-dlp -F` confirmed Instagram serves those clips
+*exclusively* as VP9 — no H.264 variant exists, so format avoidance (the
+trick ytdlp.py already used) cannot work here. Telegram clients only decode
+H.264 inline.
+
+Fix — post-download normalization in mediagrab:
+- New `mediagrab/_video.py`: after extraction every video item is probed with
+  ffprobe; anything not already H.264 in mp4/m4v is re-encoded with ffmpeg
+  (libx264, yuv420p, aac, +faststart, even-dimension scale), original file
+  replaced by `<stem>.h264.mp4`. The probe also backfills missing
+  width/height/duration (real gallery-dl sidecars carry no video_duration).
+  Best-effort: missing/failing ffprobe/ffmpeg logs a warning and delivers the
+  original file instead of failing the post.
+- Wired into both `InstagramProvider.resolve` and `TikTokProvider.resolve`
+  (also covers yt-dlp's `/bv*+ba/b` last-resort fallback landing on VP9).
+  ffmpeg was already in the Docker image.
+- Tests: provider-test `install_fakes` now fakes ffprobe/ffmpeg too (default:
+  h264 probe, extractor-call assertions unchanged); new regression tests for
+  transcode/backfill/graceful-degradation paths plus `test_video_normalize.py`
+  unit tests. Verified end-to-end against the real post: both videos come out
+  h264/yuv420p. Lint + full suite green.
+
+Operational note: the broken post is NOT in the local cache but may be cached
+on the deployment (`/data/db/cache.sqlite3`) with dead-on-arrival file_ids —
+after deploying, purge it: `DELETE FROM posts WHERE uid='DbbEZOIjTF2';`.

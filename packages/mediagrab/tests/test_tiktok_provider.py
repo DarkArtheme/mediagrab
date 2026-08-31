@@ -48,13 +48,31 @@ def fake_gallerydl_items(cmd: list[str], names_and_nums: list[tuple[str, int]]) 
     return ToolResult(0, "", "")
 
 
-def install_fakes(monkeypatch, *, ytdlp=None, gallerydl=None):
+def fake_ffprobe(cmd: list[str], *, vcodec: str = "h264") -> ToolResult:
+    payload = {
+        "streams": [{"codec_type": "video", "codec_name": vcodec, "width": 720, "height": 1280}],
+        "format": {"duration": "14.0"},
+    }
+    return ToolResult(0, json.dumps(payload), "")
+
+
+def install_fakes(monkeypatch, *, ytdlp=None, gallerydl=None, ffprobe=fake_ffprobe, ffmpeg=None):
+    """Fake extractor subprocesses; ``calls`` records only yt-dlp/gallery-dl.
+
+    Video normalization (ffprobe/ffmpeg) is faked separately and kept out of
+    ``calls`` so extractor-invocation assertions stay about extractors; by
+    default every probed video reports H.264 (no transcode) and any ffmpeg
+    call is an error.
+    """
     calls: list[list[str]] = []
 
     async def fake_run_tool(cmd, *, timeout):
-        calls.append(list(cmd))
         tool = Path(cmd[0]).name
-        handler = ytdlp if tool == "yt-dlp" else gallerydl
+        if tool in ("ffprobe", "ffmpeg"):
+            handler = ffprobe if tool == "ffprobe" else ffmpeg
+        else:
+            calls.append(list(cmd))
+            handler = ytdlp if tool == "yt-dlp" else gallerydl
         assert handler is not None, f"unexpected {tool} call"
         return handler(list(cmd))
 

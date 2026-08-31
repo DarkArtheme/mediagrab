@@ -12,6 +12,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
+from mediagrab import _video
 from mediagrab.errors import ExtractionFailed, MediaGrabError, UnsupportedUrl
 from mediagrab.models import MediaItem, MediaPost
 from mediagrab.providers.tiktok import _redirect, gallerydl, ytdlp
@@ -65,7 +66,8 @@ class TikTokProvider:
         dest_dir = Path(tempfile.mkdtemp(prefix=f"tt-{post_id}-", dir=self._download_dir))
 
         try:
-            return await self._resolve_in(route, dest_dir)
+            post = await self._resolve_in(route, dest_dir)
+            return await _video.normalize_post(post, timeout=self._timeout)
         except BaseException:
             # On success the caller owns dest_dir; on failure nobody would.
             shutil.rmtree(dest_dir, ignore_errors=True)
