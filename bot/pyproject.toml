@@ -1,6 +1,6 @@
 [project]
 name = "reelsbot"
-version = "0.1.0"
+version = "0.1.1"
 description = "Telegram bot that replies to a pasted social-media link with the media and caption."
 requires-python = ">=3.12"
 dependencies = [
