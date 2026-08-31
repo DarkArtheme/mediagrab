@@ -1,8 +1,18 @@
-# Full stack: the bot + the Local Bot API Server (2 GB upload limit).
+# The bot, plus an optional Local Bot API Server (2 GB upload limit).
+#
+# Default (`docker compose up -d --build`): bot only, talking to the cloud
+# api.telegram.org (50 MB upload cap) — leave TELEGRAM_API_URL empty in .env;
+# TELEGRAM_API_ID/HASH are not needed.
+#
+# 2 GB mode (`docker compose --profile local-api up -d --build`): also starts
+# aiogram/telegram-bot-api; requires TELEGRAM_API_ID/HASH from my.telegram.org
+# and TELEGRAM_API_URL=http://telegram-bot-api:8081 in .env.
+#
 # BOT_VERSION pins the image tag (defaults to "dev" for local builds); set it
 # in .env or the shell to match the bot/pyproject.toml version being deployed.
 services:
   telegram-bot-api:
+    profiles: [local-api]
     image: aiogram/telegram-bot-api:latest
     environment:
       TELEGRAM_API_ID: ${TELEGRAM_API_ID}
@@ -20,7 +30,8 @@ services:
     image: reelsbot:${BOT_VERSION:-dev}
     env_file: .env
     environment:
-      TELEGRAM_API_URL: http://telegram-bot-api:8081
+      # TELEGRAM_API_URL intentionally comes from .env: empty → cloud
+      # api.telegram.org; http://telegram-bot-api:8081 → the local-api profile.
       IG_COOKIES_FILE: /data/cookies/instagram.txt
       DB_PATH: /data/db/cache.sqlite3
       # Fixed path (not the system tmp) so the startup sweep can clear
@@ -29,8 +40,6 @@ services:
     volumes:
       - ./cookies.txt:/data/cookies/instagram.txt:ro
       - db-data:/data/db
-    depends_on:
-      - telegram-bot-api
     restart: unless-stopped
     # Must exceed the bot's SHUTDOWN_GRACE (30s) so in-flight jobs can drain.
     stop_grace_period: 45s

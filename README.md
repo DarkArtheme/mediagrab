@@ -71,7 +71,8 @@ Local compose builds tag the image `reelsbot:${BOT_VERSION:-dev}`.
 2. Find your numeric Telegram user id (e.g. message [@userinfobot](https://t.me/userinfobot))
    and put it in `WHITELIST_USER_IDS` and `ADMIN_USER_ID`.
 3. Leave `TELEGRAM_API_URL` empty to use the standard `api.telegram.org` (50 MB upload
-   limit; the 2 GB Local Bot API Server arrives with the Docker setup).
+   limit; the optional 2 GB Local Bot API Server is a Docker compose profile — see
+   "Deploying to a VPS").
 4. Point `IG_COOKIES_FILE` at the burner account's cookies file (see below).
 5. `uv run python -m reelsbot`, then message the bot an Instagram link.
 
@@ -92,6 +93,54 @@ logged-in account. Use a **dedicated burner account**, never a personal one.
 Tips: don't log the burner account out in the browser (that invalidates the exported
 session), and keep request volume low — the bot's cache and cooldowns exist to protect
 the account.
+
+## Deploying to a VPS
+
+Requires Docker with the compose plugin. The stack is defined in `docker-compose.yml`:
+the bot image is built from source on the VPS (`reelsbot:${BOT_VERSION:-dev}`, see
+`docker/Dockerfile`), and the optional Local Bot API Server uses the official
+`aiogram/telegram-bot-api` image.
+
+1. Clone the repo and prepare the config:
+
+   ```bash
+   git clone <repo-url> && cd reels-downloader
+   cp .env.example .env
+   # fill in: BOT_TOKEN, WHITELIST_USER_IDS, ADMIN_USER_ID
+   ```
+
+2. Put the burner account's `cookies.txt` (Netscape format, see "Instagram cookies")
+   in the repo root — compose mounts `./cookies.txt` read-only into the container.
+
+3. Start the stack — two modes:
+
+   **Cloud mode (default, no api_id/hash needed).** Uploads are capped at 50 MB per
+   file, which covers typical reels/TikToks (5–40 MB with the H.264 formats the bot
+   selects); larger videos fail with a user-facing error message.
+
+   ```bash
+   docker compose up -d --build
+   ```
+
+   **2 GB mode (Local Bot API Server).** Needs `TELEGRAM_API_ID`/`TELEGRAM_API_HASH`
+   from [my.telegram.org](https://my.telegram.org) — create the app from a residential
+   or mobile-data IP in the same country as the account's phone number (datacenter/VPN
+   IPs get a blank "ERROR"). Then in `.env` set the two values and
+   `TELEGRAM_API_URL=http://telegram-bot-api:8081`, and start with the profile:
+
+   ```bash
+   docker compose --profile local-api up -d --build
+   ```
+
+4. Verify: `docker compose logs -f bot` should show "starting long polling", and the
+   `/health` command (from the admin account) should report all checks green.
+
+Switching between the modes later is just the `.env` change plus a restart. Cached
+Telegram `file_id`s go stale across a switch; the bot detects that, drops the entry,
+and re-downloads — no manual cache surgery needed.
+
+To update a running deployment: `git pull && docker compose up -d --build` (add
+`--profile local-api` in 2 GB mode).
 
 ## Operations
 

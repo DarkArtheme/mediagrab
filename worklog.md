@@ -471,3 +471,29 @@ already documented there in the previous entry.
   content incl. missing-cookies flagging, `wait_idle` (idle/drained/timeout),
   `sweep_download_dir` (prefix-only, None, missing dir), `on_shutdown` (drains then
   closes cache; closes cache even when grace expires).
+
+## 2026-08-31 — Deploy without api_id/hash: local-api compose profile + VPS deploy docs
+
+my.telegram.org keeps refusing to issue TELEGRAM_API_ID/HASH (the known blank
+"ERROR"; research says it wants a residential/mobile IP in the phone number's
+country, and both canonical GitHub issues are closed unresolved). Decision:
+deploy against the cloud api.telegram.org (50 MB upload cap — enough for
+typical reels/TikToks at the H.264 formats we select) and keep the 2 GB Local
+Bot API Server as an opt-in.
+
+- **docker-compose.yml**: `telegram-bot-api` moved under the `local-api`
+  profile; the bot's hardcoded `TELEGRAM_API_URL` env override removed (now
+  read from `.env`: empty → cloud, `http://telegram-bot-api:8081` → local
+  server); `depends_on` dropped (would break the default stack against a
+  profiled service). Default `docker compose up` starts the bot only; verified
+  `config --services` shows bot / bot+telegram-bot-api per profile.
+- **.env.example**: TELEGRAM_API_ID/HASH now empty and marked optional
+  (local-api profile only); TELEGRAM_API_URL defaults to empty (cloud mode).
+- **README**: new "Deploying to a VPS" section (closes the Phase 5 deploy-notes
+  item): clone → .env → cookies.txt → cloud mode vs 2 GB mode commands, the
+  residential/mobile-IP advice for my.telegram.org, /health verification,
+  mode-switch note (stale file_ids handled automatically), update procedure.
+  "Running the bot locally" step 3 now points at the profile.
+- Phase 5 "done when" (compose up on the VPS serving the whitelist) still
+  pending — but no longer blocked on Telegram: cloud mode needs no api_id/hash.
+  The >50 MB upload check only applies to the local-api variant.
