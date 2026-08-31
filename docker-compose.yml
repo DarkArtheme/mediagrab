@@ -32,17 +32,10 @@ services:
     # (then `docker compose pull bot && docker compose up -d --no-build`).
     image: ${BOT_IMAGE:-reelsbot}:${BOT_VERSION:-dev}
     env_file: .env
-    environment:
-      # TELEGRAM_API_URL intentionally comes from .env: empty → cloud
-      # api.telegram.org; http://telegram-bot-api:8081 → the local-api profile.
-      IG_COOKIES_FILE: /data/cookies/instagram.txt
-      DB_PATH: /data/db/cache.sqlite3
-      # Fixed path (not the system tmp) so the startup sweep can clear
-      # download dirs a crashed run left behind.
-      DOWNLOAD_DIR: /data/tmp
     volumes:
-      - ./cookies.txt:/data/cookies/instagram.txt:ro
+      - ./instagram.txt:/data/cookies/instagram.txt:ro
       - db-data:/data/db
+      - video-cache:/data/tmp
     restart: unless-stopped
     # Must exceed the bot's SHUTDOWN_GRACE (30s) so in-flight jobs can drain.
     stop_grace_period: 45s
@@ -50,3 +43,4 @@ services:
 volumes:
   telegram-bot-api-data:
   db-data:
+  video-cache:
