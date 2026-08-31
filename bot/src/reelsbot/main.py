@@ -106,6 +106,9 @@ async def run(config: Config) -> None:
 
 
 def main() -> None:
+    # .env.local (local-run overrides, git-ignored) wins over .env: load_dotenv
+    # never overwrites variables that are already set, so first file loaded wins.
+    load_dotenv(".env.local")
     load_dotenv()
     logging.basicConfig(
         level=logging.INFO,

@@ -549,3 +549,14 @@ Docs updated to match:
 - **.gitignore**: added `instagram.txt` and `tiktok.txt` — the renamed cookies
   file was not covered by the old `cookies.txt` entry (secret-leak risk).
 - **CLAUDE.md**: secrets line updated to "cookie files like instagram.txt".
+
+## 2026-08-31 — .env.local for local runs
+
+Local runs and Docker now share `.env` without path conflicts: `main()` loads
+`.env.local` before `.env` (python-dotenv never overwrites already-set vars, so
+the first file wins), letting `.env.local` override the in-container `/data/...`
+paths. Added `.env.local.example` (IG_COOKIES_FILE=./instagram.txt, empty
+DB_PATH/DOWNLOAD_DIR → local defaults), git-ignored `.env.local`, README
+local-run step 4 rewritten around the new file. Docker is unaffected — compose
+reads `.env` via env_file and the container has no `.env.local`. Lint + full
+test suite green.

@@ -13,6 +13,7 @@ build/
 
 # Secrets & local data
 .env
+.env.local
 cookies.txt
 instagram.txt
 tiktok.txt

@@ -80,11 +80,11 @@ image without pushing (Dockerfile validation). Use `edge` to track master,
 3. Leave `TELEGRAM_API_URL` empty to use the standard `api.telegram.org` (50 MB upload
    limit; the optional 2 GB Local Bot API Server is a Docker compose profile — see
    "Deploying to a VPS").
-4. Point `IG_COOKIES_FILE` at the burner account's cookies file (see below). Note:
-   the `/data/...` values `.env.example` ships for `IG_COOKIES_FILE`, `DB_PATH` and
-   `DOWNLOAD_DIR` are in-container paths for the Docker deployment — for a local run
-   replace them with local paths (or leave `DB_PATH`/`DOWNLOAD_DIR` empty for the
-   defaults: `./cache.sqlite3` and the system temp dir).
+4. The `/data/...` paths `.env.example` ships for `IG_COOKIES_FILE`, `DB_PATH` and
+   `DOWNLOAD_DIR` are in-container paths for the Docker deployment. For local runs,
+   override them in `.env.local` (`cp .env.local.example .env.local`) — the bot loads
+   it from the repo root on top of `.env`, and any variable set there wins. Point
+   `IG_COOKIES_FILE` there at the burner account's cookies file (see below).
 5. `uv run python -m reelsbot`, then message the bot an Instagram link.
 
 ## Instagram cookies
