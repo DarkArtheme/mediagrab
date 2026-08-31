@@ -30,7 +30,8 @@ jobs:
 
   # Build the bot image on every PR (validation only) and push it to GHCR on
   # every master push as :edge and an immutable semver dev tag
-  # :X.Y.Z-dev.<short-sha> (X.Y.Z = the version in bot/pyproject.toml).
+  # :X.Y.(Z+1)-dev.<short-sha> — a pre-release of the *next* patch after the
+  # version in bot/pyproject.toml, so dev builds sort after the released X.Y.Z.
   # Release tags (X.Y.Z, X.Y, latest) come from the Release workflow on bot-v*.
   image:
     needs: checks
@@ -54,8 +55,12 @@ jobs:
       - name: Compute dev version
         id: ver
         run: |
-          version="$(python3 -c "import tomllib;print(tomllib.load(open('bot/pyproject.toml','rb'))['project']['version'])")"
-          echo "devtag=${version}-dev.$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          next="$(python3 -c "
+          import tomllib
+          major, minor, patch = tomllib.load(open('bot/pyproject.toml','rb'))['project']['version'].split('.')
+          print(f'{major}.{minor}.{int(patch)+1}')
+          ")"
+          echo "devtag=${next}-dev.$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Docker metadata
         id: meta

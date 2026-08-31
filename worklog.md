@@ -604,3 +604,11 @@ fired. The remote had zero tags.
   workflow run started, builds/pushes ghcr.io/darkartheme/reelsbot:0.1.1.
 - `scripts/release.sh`: `git tag` → `git tag -a -m "Release <component> v<ver>"`
   so `--follow-tags` picks the tag up on future releases.
+
+## 2026-08-31 — CI dev tags: pre-release of the *next* patch
+
+Dev images were tagged `<pyproject version>-dev.<sha>`, i.e. a semver
+pre-release of the version *already released* — sorting before it while
+containing newer code. CI's "Compute dev version" now bumps the patch, so
+master builds after releasing 0.1.1 are tagged `0.1.2-dev.<sha>` and sort
+after `0.1.1`. Trade-off accepted: CI guesses the next release is a patch.
